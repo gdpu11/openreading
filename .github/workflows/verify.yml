@@ -16,6 +16,7 @@ jobs:
         with: { go-version-file: go.mod, cache: true }
       - run: npm ci
       - run: npm test
+      - run: npm run test:desktop-packaging
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run build
       - run: go vet ./...

@@ -14,7 +14,11 @@
     "desktop:pack": "node scripts/package-desktop.mjs",
     "mobile:sync": "npm run build && cap sync",
     "mobile:android": "npm run mobile:sync && cap open android",
-    "mobile:ios": "npm run mobile:sync && cap open ios"
+    "mobile:ios": "npm run mobile:sync && cap open ios",
+    "desktop:pack:mac:intel": "node scripts/package-desktop.mjs --mac --x64",
+    "desktop:pack:mac:arm64": "node scripts/package-desktop.mjs --mac --arm64",
+    "desktop:pack:windows": "node scripts/package-desktop.mjs --win --x64",
+    "test:desktop-packaging": "node --test scripts/desktop-packaging.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.3",

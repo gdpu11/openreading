@@ -7,12 +7,23 @@ Open Reading uses Electron on macOS/Windows and Capacitor on Android/iOS. Local 
 ```sh
 npm ci
 npm run desktop:dev
-npm run desktop:pack -- --mac --arm64
-npm run desktop:pack -- --mac --x64
-npm run desktop:pack -- --win --x64
+npm run desktop:pack:mac:arm64
+npm run desktop:pack:mac:intel
+# Run on Windows:
+npm run desktop:pack:windows
 ```
 
 Build on a compatible host. Each desktop package includes the matching native Go service. Use separate Intel/Apple Silicon packages; there is no universal binary. Signing/notarization is not configured in this preview.
+
+| Computer | Installer | Portable archive |
+| --- | --- | --- |
+| Mac with Apple Silicon | `Open-Reading-<version>-macOS-arm64.dmg` | `Open-Reading-<version>-macOS-arm64.zip` |
+| Mac with Intel CPU | `Open-Reading-<version>-macOS-x64.dmg` | `Open-Reading-<version>-macOS-x64.zip` |
+| Windows with Intel / AMD CPU | `Open-Reading-<version>-Windows-x64-setup.exe` | `Open-Reading-<version>-Windows-x64.zip` |
+
+The native build workflow uploads these under `Open-Reading-mac-arm64`, `Open-Reading-mac-x64`, and `Open-Reading-win-x64` in its Actions run. Intel Mac builds run on an Intel runner; Windows builds run on Windows. Every package checks the Electron and Go executable architectures, and native-host builds start the bundled service against a temporary library to verify its health endpoint and web assets. These checks run before generating the installer archives.
+
+`npm run desktop:pack -- --mac --x64` and `--win --x64` remain available. Build one platform and architecture per invocation: combining architectures would put only one Go service into multiple incompatible packages. Run `npm run test:desktop-packaging` to check target selection and architecture validation.
 
 Library data is stored separately from the application. The Library menu can select an existing local library directory; stop any other service using that directory first. Closing reading windows flushes drafts and progress before the shared backend exits.
 

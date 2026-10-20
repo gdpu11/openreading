@@ -25,15 +25,18 @@
     "icon": "desktop/assets/icon.icns",
     "extendInfo": {
       "NSLocalNetworkUsageDescription": "手机在同一局域网连接这台电脑，同步阅读文件和学习笔记。"
-    }
+    },
+    "artifactName": "Open-Reading-${version}-macOS-${arch}.${ext}"
   },
   "win": {
     "target": ["nsis", "zip"],
-    "icon": "desktop/assets/icon.ico"
+    "icon": "desktop/assets/icon.ico",
+    "artifactName": "Open-Reading-${version}-Windows-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "artifactName": "Open-Reading-${version}-${arch}-setup.${ext}"
-  }
+    "artifactName": "Open-Reading-${version}-Windows-${arch}-setup.${ext}"
+  },
+  "afterPack": "./scripts/verify-desktop.mjs"
 }

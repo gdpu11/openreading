@@ -40,6 +40,8 @@ AI 是可选功能，需要自行配置模型服务，可能产生服务商费�
 
 macOS / Windows 使用 Electron；Android 使用 Capacitor。iOS 提供源码和模拟器构建，**暂时没有 App Store / TestFlight 安装入口**。桌面预览包尚未商业签名或公证，Android 包用于调试；构建通过不等于已在所有真机完成验证。
 
+安装包按平台区分：Intel Mac 选择 `macOS-x64.dmg`，Apple Silicon Mac 选择 `macOS-arm64.dmg`，Windows（Intel / AMD）选择 `Windows-x64-setup.exe`；同平台也提供 ZIP 包。可从对应的 GitHub Actions 原生构建记录下载，正式发布后的包位于 Releases。
+
 构建步骤见 [英文 README](README.md#build-from-source) 和 [原生客户端说明](docs/native-clients.md)。推荐先用示例资料体验，并备份自己的书库。
 
 ## 隐私与限制

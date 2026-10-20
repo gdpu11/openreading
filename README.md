@@ -72,9 +72,11 @@ npm run desktop:dev
 Package a desktop build on a compatible host:
 
 ```sh
-npm run desktop:pack -- --mac --arm64
-# macOS Intel: --mac --x64
-# Windows x64: --win --x64
+npm run desktop:pack:mac:arm64
+# Intel Mac:
+npm run desktop:pack:mac:intel
+# Run on Windows (Intel / AMD):
+npm run desktop:pack:windows
 ```
 
 For Android/iOS setup, see [native build instructions](docs/native-clients.md). GitHub Actions builds the native targets; download links appear in Releases when artifacts have been validated and published.

@@ -7,6 +7,7 @@ import {
   rmSync,
 } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { desktopTarget } from "./desktop-target.mjs";
 function cli(pkg, name) {
   const metadata = resolve("node_modules", pkg, "package.json");
   const info = JSON.parse(readFileSync(metadata, "utf8"));
@@ -16,26 +17,8 @@ function cli(pkg, name) {
   );
 }
 const args = process.argv.slice(2);
-const platform = args.includes("--win")
-  ? "windows"
-  : args.includes("--mac")
-    ? "darwin"
-    : { win32: "windows" }[process.platform] || process.platform;
-const arch = args.includes("--x64")
-  ? "amd64"
-  : args.includes("--arm64")
-    ? "arm64"
-    : { x64: "amd64", arm64: "arm64" }[process.arch];
-if (args.includes("--universal"))
-  throw Error(
-    "Please build separate --x64 and --arm64 packages: each bundles its own native Go service.",
-  );
-if (
-  !["windows", "darwin"].includes(platform) ||
-  !["amd64", "arm64"].includes(arch)
-)
-  throw Error("Choose --mac/--win and --arm64/--x64");
-const env = { ...process.env, GOOS: platform, GOARCH: arch };
+const target = desktopTarget(args);
+const env = { ...process.env, GOOS: target.goos, GOARCH: target.goarch };
 // Bundle the APK so private previews can be installed without a GitHub login.
 mkdirSync("desktop/mobile", { recursive: true });
 const androidAPK =
@@ -68,7 +51,7 @@ execFileSync(
     cli("electron-builder", "electron-builder"),
     "--config",
     "desktop/builder.json",
-    ...args,
+    ...target.builderArgs,
     "--publish",
     "never",
   ],

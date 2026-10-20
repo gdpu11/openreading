@@ -10,7 +10,7 @@ on:
         "web/**",
         "internal/**",
         "cmd/**",
-        "scripts/*desktop.mjs",
+        "scripts/*desktop*",
         "package*.json",
         "capacitor.config.ts",
         ".github/workflows/native-builds.yml",
@@ -27,7 +27,7 @@ jobs:
           - os: macos-latest
             target: mac
             arch: arm64
-          - os: macos-latest
+          - os: macos-15-intel
             target: mac
             arch: x64
           - os: windows-latest
@@ -41,6 +41,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod, cache: true }
       - run: npm ci
+      - run: npm run test:desktop-packaging
       - uses: actions/download-artifact@v4
         with:
           name: Open-Reading-Android-debug
@@ -54,6 +55,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Open-Reading-${{ matrix.target }}-${{ matrix.arch }}
+          if-no-files-found: error
           path: |
             release/desktop/*.dmg
             release/desktop/*.zip
