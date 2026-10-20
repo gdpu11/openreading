@@ -1,3 +1,4 @@
+import { clearEpubHighlights } from "./epubHighlights";
 import { tr } from "../i18n";
 import { BookWordCount } from "./BookWordCount";
 import {
@@ -738,9 +739,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       // EPUB highlights live in the rendition's own registry, unlike the
       // React overlay. Remove the previous set before painting current data.
       if (doc.format === "epub" && rendition.current) {
-        for (const cfi of epubHighlights.current)
-          rendition.current.annotations.remove(cfi, "highlight");
-        epubHighlights.current.clear();
+        clearEpubHighlights(rendition.current, epubHighlights.current);
       }
       for (const a of latest.current.annotations) {
         let anchor: Anchor = a.anchor;

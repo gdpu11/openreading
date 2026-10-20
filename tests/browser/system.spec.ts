@@ -836,6 +836,7 @@ test("Concurrent reader windows preserve each other's offline reading receipts",
         }),
     );
   await page.clock.install();
+  await page.bringToFront();
   await openFile(page, "中文与Unicode.txt");
   await expect(page.locator(".session-timer")).toHaveAttribute(
     "data-state",
@@ -852,6 +853,7 @@ test("Concurrent reader windows preserve each other's offline reading receipts",
   await second.goto(base);
   await expect(second.locator(".file-item")).toHaveCount(docs.length);
   await second.clock.install();
+  await second.bringToFront();
   await openFile(second, "幂等性.md");
   await expect(second.locator(".session-timer")).toHaveAttribute(
     "data-state",
