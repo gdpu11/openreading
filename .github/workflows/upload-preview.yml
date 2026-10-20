@@ -34,7 +34,7 @@ jobs:
           def api(route):
               return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + repo + route]))
           run = api('/actions/runs/' + run_id)
-          release = api('/releases/tags/' + tag)
+          release = next(r for r in api('/releases') if r['tag_name'] == tag)
           assert run['conclusion'] == 'success' and run['path'] == '.github/workflows/native-builds.yml'
           assert release['draft'], 'Only existing draft releases may be changed'
           target = release['target_commitish']
