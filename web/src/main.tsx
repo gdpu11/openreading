@@ -510,6 +510,7 @@ function App() {
       (desktopLibrary || d.id !== readerTarget?.memberId)
     ) {
       try {
+        await flushProgress().catch(() => {});
         await desktop.openBook(workspace.id, d.id);
       } catch (e) {
         fail(e);
@@ -520,6 +521,9 @@ function App() {
     const openingWorkspace = workspace?.id;
     try {
       setError("");
+      // Persist the previous book before the next prepare records its opening
+      // time, so a delayed save cannot move the previous book ahead in recents.
+      await flushProgress().catch(() => {});
       let prepared;
       if (version) {
         prepared = {

@@ -8,6 +8,7 @@ Review date: 2026-10-20. This is a source and regression review, not an independ
 - **Backup file references:** reject forged, correctly rehashed manifests whose version references are not exactly their lowercase SHA-256 content hashes. Validate references again before snapshot and cover reads, including corrupted stored metadata.
 - **Dependency lockfile:** repair four transitive version/tarball mismatches that a populated local npm cache had masked. Validate installation with a separate empty cache and the public registry.
 - **Build dependencies:** update the affected transitive dependency paths. The final npm audit reported zero known advisories across runtime and development dependencies.
+- **Recent reading:** flush pending progress before opening the next book/window, preventing a delayed save from promoting the previous book ahead of it.
 - **Reader behavior:** fix context menus closing during pending automatic scrolling; preserve the PDF reading page during window reflow; restore text positions after delayed images/fonts and recalculate their percentages; wait for pending EPUB navigation before destroying a book during rapid switching.
 - **Distribution boundaries:** remove workstation-specific cloud defaults and private repository links. A hosted mode requires an explicitly configured HTTPS origin; local reading remains the default.
 
