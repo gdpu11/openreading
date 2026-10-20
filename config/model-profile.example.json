@@ -1,0 +1,20 @@
+{
+  "name": "DeepSeek",
+  "protocol": "openai",
+  "baseUrl": "https://api.deepseek.com",
+  "modelId": "deepseek-flash",
+  "apiKey": "",
+  "inputBudget": 8000,
+  "generatedTokenCap": 2000,
+  "contextWindow": 32000,
+  "timeout": 60,
+  "streaming": true,
+  "systemRole": "system",
+  "outputLimitField": "max_tokens",
+  "includeUsage": false,
+  "platformId": "deepseek",
+  "models": [
+    "deepseek-flash",
+    "deepseek-v4-pro"
+  ]
+}

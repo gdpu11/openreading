@@ -1,0 +1,36 @@
+name: Verify source
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm run build
+      - run: go vet ./...
+      - run: go test ./... -count=1 -timeout=180s
+      - run: go test ./internal/server -race -count=1 -timeout=180s
+      - run: go build -trimpath -o release/openreading ./cmd/openreading
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test tests/browser/system.spec.ts tests/browser/pairing.spec.ts
+        env:
+          OR_REPORT_FILE: release/browser-results.json
+          OR_EVIDENCE_DIR: release/browser-evidence
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-diagnostics
+          path: |
+            test-results/
+            release/browser-results.json

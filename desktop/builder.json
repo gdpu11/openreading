@@ -1,0 +1,39 @@
+{
+  "appId": "cn.ixiaoshi.openreading",
+  "productName": "Open Reading",
+  "directories": {
+    "output": "release/desktop"
+  },
+  "files": ["desktop/main.cjs", "desktop/preload.cjs", "package.json"],
+  "extraResources": [
+    {
+      "from": "desktop/mobile",
+      "to": "mobile"
+    },
+    {
+      "from": "desktop/runtime",
+      "to": "runtime"
+    }
+  ],
+  "asar": true,
+  "npmRebuild": false,
+  "publish": null,
+  "mac": {
+    "category": "public.app-category.books",
+    "target": ["dmg", "zip"],
+    "identity": null,
+    "icon": "desktop/assets/icon.icns",
+    "extendInfo": {
+      "NSLocalNetworkUsageDescription": "手机在同一局域网连接这台电脑，同步阅读文件和学习笔记。"
+    }
+  },
+  "win": {
+    "target": ["nsis", "zip"],
+    "icon": "desktop/assets/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "artifactName": "Open-Reading-${version}-${arch}-setup.${ext}"
+  }
+}

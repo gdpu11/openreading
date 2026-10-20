@@ -1,0 +1,5 @@
+# Generated bundles and upstream Gradle wrapper retain their own formatting.
+internal/server/static/assets/* linguist-generated=true -whitespace
+native/android/gradlew.bat -text -whitespace
+third-party/native/** -whitespace
+third-party/** -whitespace

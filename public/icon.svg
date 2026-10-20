@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f3f3f5"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#000000" flood-opacity=".16"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="864" height="864" rx="196" fill="url(#paper)" filter="url(#shadow)"/>
+  <rect x="81" y="81" width="862" height="862" rx="195" fill="none" stroke="#dcdce0" stroke-width="2"/>
+  <rect x="84" y="84" width="856" height="856" rx="192" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <g id="book" transform="translate(0 -8)">
+    <path fill="#202024" d="M276 316C351 298 428 313 490 352V720C426 680 350 663 277 682C260 687 248 678 248 661V348C248 332 259 320 276 316Z"/>
+    <path fill="#202024" d="M748 316C673 298 596 313 534 352V720C598 680 674 663 747 682C764 687 776 678 776 661V348C776 332 765 320 748 316Z"/>
+    <path fill="#ffffff" d="M650 311C673 308 695 308 716 310V462L683 440L650 462Z"/>
+    <path fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" opacity=".9" d="M306 418C350 412 391 419 432 437M306 478C341 473 372 477 404 487"/>
+  </g>
+</svg>

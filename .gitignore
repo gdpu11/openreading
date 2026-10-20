@@ -1,0 +1,41 @@
+node_modules/
+dist/
+.data/
+release/
+playwright-report/
+test-results/
+*.sqlite*
+*.log
+.env
+.DS_Store
+
+# Local credentials and private runtime files
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+
+# Native generated output; signing material never enters Git
+desktop/runtime/
+desktop/mobile/
+native/android/.gradle/
+native/android/local.properties
+native/android/**/build/
+native/android/.idea/
+native/ios/**/build/
+native/ios/**/DerivedData/
+native/ios/**/xcuserdata/
+native/ios/App/App/public/
+native/android/app/src/main/assets/public/
+*.keystore
+*.jks
+
+# Private evidence and generated frontend output
+docs/evidence/
+internal/server/static/*
+!internal/server/static/BUILD_REQUIRED.txt
+*.bundle

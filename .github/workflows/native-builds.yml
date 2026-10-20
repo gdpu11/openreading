@@ -1,0 +1,89 @@
+name: Native client builds
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      [
+        "desktop/**",
+        "native/**",
+        "web/**",
+        "internal/**",
+        "cmd/**",
+        "scripts/*desktop.mjs",
+        "package*.json",
+        "capacitor.config.ts",
+        ".github/workflows/native-builds.yml",
+      ]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    needs: android
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+            arch: arm64
+          - os: macos-latest
+            target: mac
+            arch: x64
+          - os: windows-latest
+            target: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: Open-Reading-Android-debug
+          path: release/mobile
+      - run: go test ./internal/server -run 'TestLAN|TestORD|TestSync|TestCloud|TestMultiBrowser|TestM1SourcesIdentitySnapshots|TestWindowsFileIdentity' -count=1
+      - run: npm run desktop:pack -- --${{ matrix.target }} --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          OPENREADING_ANDROID_APK: release/mobile/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Reading-${{ matrix.target }}-${{ matrix.arch }}
+          path: |
+            release/desktop/*.dmg
+            release/desktop/*.zip
+            release/desktop/*.exe
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - run: npm ci
+      - run: npm run mobile:sync
+      - run: cd native/android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Reading-Android-debug
+          path: native/android/app/build/outputs/apk/debug/*.apk
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm }
+      - run: npm ci
+      - run: npm run mobile:sync
+      - run: xcodebuild -version
+      - run: xcodebuild -project native/ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -derivedDataPath release/ios CODE_SIGNING_ALLOWED=NO build
+      - run: ditto -c -k --sequesterRsrc --keepParent release/ios/Build/Products/Debug-iphonesimulator/App.app release/Open-Reading-iOS-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Reading-iOS-simulator
+          path: release/Open-Reading-iOS-simulator.zip

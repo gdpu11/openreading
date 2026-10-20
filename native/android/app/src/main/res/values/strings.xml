@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Open Reading</string>
+    <string name="title_activity_main">Open Reading</string>
+    <string name="package_name">cn.ixiaoshi.openreading</string>
+    <string name="custom_url_scheme">cn.ixiaoshi.openreading</string>
+</resources>
