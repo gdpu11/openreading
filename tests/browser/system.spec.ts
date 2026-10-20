@@ -600,7 +600,7 @@ test("Reading activity combines every workspace in a global page and preserves t
   await openFile(page, "可靠接口.epub");
   // Let EPUB finish rendering before freezing its animation timers.
   await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   const readerFrame = await page
     .locator(".epub-container iframe")
     .elementHandle();
