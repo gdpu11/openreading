@@ -3217,7 +3217,6 @@ test("Markdown restores its position after a delayed image without overriding a 
 }) => {
   await page.setViewportSize({ width: 1480, height: 650 });
   await openFile(page, "幂等性.md");
-  const reader = page.locator(".reader");
   const image = page.locator(".prose img");
   await expect
     .poll(() =>
@@ -3226,9 +3225,11 @@ test("Markdown restores its position after a delayed image without overriding a 
       ),
     )
     .toBe(true);
-  await reader.evaluate((el) =>
-    el.scrollTo({ top: el.scrollHeight, behavior: "instant" }),
-  );
+  // Establish the saved position through a user seek, which also ends the
+  // initial automatic restoration while late fonts are still settling.
+  await page
+    .getByRole("slider", { name: "整本阅读进度", exact: true })
+    .press("End");
   const member = docs.find((d: any) =>
     d.bindings.some((b: any) => b.relativePath.endsWith("幂等性.md")),
   );
