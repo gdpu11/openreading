@@ -60,9 +60,11 @@ it("resumes a partially downloaded file after a new invocation and keeps progres
     `bytes=${size * 2}-${data.length - 1}`,
   ]);
   expect(progress.mock.calls[0]).toEqual([size, data.length]);
-  expect(new Uint8Array(await fake.files.get(key)!.arrayBuffer())).toEqual(
-    data,
-  );
+  expect(
+    Buffer.from(await fake.files.get(key)!.arrayBuffer()).equals(
+      Buffer.from(data),
+    ),
+  ).toBe(true);
   expect(fake.chunks.size).toBe(0);
 });
 
