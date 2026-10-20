@@ -1,6 +1,8 @@
 # Open Reading
 
-A local-first reader for **EPUB, PDF, Markdown and TXT**. Read, annotate and organize your books on your own computer, then sync with your phone over your local network.
+**Highlight a passage. Ask AI. Keep your thinking beside the text.**
+
+Open Reading is a local-first reader for **EPUB, PDF, Markdown and TXT**. Ask questions about a selected passage, follow up beside the original text, convert between PDF and EPUB, and keep books and notes on your own computer.
 
 **MIT licensed · Preview software · English / 简体中文**
 
@@ -10,14 +12,29 @@ A local-first reader for **EPUB, PDF, Markdown and TXT**. Read, annotate and org
 
 ## What it does
 
+- **Highlight to ask AI.** Select a passage and choose **Ask AI** to explain a concept, give an example, translate it or explore how to apply it. Continue the conversation beside the passage, with your notes and the source together. Choose your own compatible model service and preview the context before sending.
+- **Convert PDF ↔ EPUB.** Turn a PDF into an EPUB using original-page images or extracted, reflowed text. On desktop, export EPUB to a newly paginated PDF. Conversion creates a separate file and retains the original book and notes; annotations are not transferred to the converted book.
 - **Your computer is the library.** Local reading and notes work without a cloud account or your own server. Import files or connect a folder.
 - **Read side by side.** Desktop books open in separate windows. EPUB supports chapter scrolling, single-page and two-page layouts; PDF supports continuous scrolling, two-page layouts and zoom shortcuts.
 - **Keep notes with their source.** Highlight passages, write notes, revisit discussions and export a book with saved annotations in an `.ord` learning package.
 - **Sync over your LAN.** Pair your Android phone with the desktop, approve the device and sync selected workspaces. Offline notes are queued for later synchronization; conflicting edits retain drafts.
 - **See your reading activity.** A foreground-only session timer, global calendar, streaks, word counts and configurable reading-time estimates.
 - **Organize your library.** Covers, search, sorting, format filters, favorites and finished status. Removing a book from a library keeps its file; original-file deletion requires a separate explicit choice.
-- **Convert books.** PDF → EPUB as original-page images or extracted, reflowed text. Desktop EPUB → PDF uses an isolated local A4 print pipeline. Originals and existing notes are retained; annotations are not transferred to converted books.
-- **Optional reading assistance.** Connect your own compatible Chat Completions endpoint and API key. Ordinary reading and notes do not require a model. You can review the selected context before sending it to your chosen provider.
+
+## Try passage-based AI questions
+
+1. Open **Settings → Models & privacy**. Add a compatible Chat Completions provider, enter its endpoint and API key, choose a model and enable it for the current workspace.
+2. Open a book, select a passage and click **Ask AI** in the selection toolbar.
+3. Write a question, or use a shortcut such as **Explain simply**, **Give an example**, **Translate** or **How to apply this**. Choose the selected passage alone or include nearby text, then use **Preview what will be sent** to inspect the context before sending.
+4. Continue asking questions in the same discussion, and keep your own notes beside the original text.
+
+For example: “What does this paragraph mean? Give me a concrete example.” Then follow up with “How would I apply this idea at work?”
+
+AI is optional and requires your own configured model service; provider charges may apply. Selected context and relevant conversation history go to that provider. Ordinary reading, highlighting and notes work without a model.
+
+![Highlights and notes beside the original text](docs/images/reading-notes.png)
+
+To convert a book, right-click it in the library and choose **Convert to EPUB** or **Convert to PDF**. PDF → EPUB offers page-image and text-reflow modes; EPUB → PDF requires the desktop app. Conversion runs locally. Complex layouts may change, and scanned PDF pages are not OCRed.
 
 ## Platform status
 
