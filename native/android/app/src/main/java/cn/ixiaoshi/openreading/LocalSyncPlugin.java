@@ -53,7 +53,7 @@ public class LocalSyncPlugin extends Plugin {
                 });
                 connection.setInstanceFollowRedirects(false);connection.setUseCaches(false);connection.setConnectTimeout(15000);connection.setReadTimeout(120000);connection.setRequestMethod(method);
                 JSObject headers=call.getObject("headers",new JSObject());
-                for(String key:new String[]{"Authorization","Content-Type"}){String value=headers.optString(key,"");if(!value.isEmpty())connection.setRequestProperty(key,value);}
+                for(String key:new String[]{"Authorization","Content-Type","Range"}){String value=headers.optString(key,"");if(!value.isEmpty())connection.setRequestProperty(key,value);}
                 String encoded=call.getString("body");
                 if(encoded!=null){if(encoded.length()>145*1024*1024)throw new IOException("手机上传超过 100 MB 上限");byte[] body=Base64.decode(encoded,Base64.DEFAULT);connection.setDoOutput(true);connection.setFixedLengthStreamingMode(body.length);try(OutputStream out=connection.getOutputStream()){out.write(body);}}
                 int status=connection.getResponseCode();JSObject responseHeaders=new JSObject();

@@ -55,6 +55,7 @@ export async function lanRequest(
   path: string,
   token: string,
   body?: any,
+  requestHeaders: Record<string, string> = {},
 ) {
   if (
     !validLAN(origin, fingerprint) ||
@@ -66,6 +67,7 @@ export async function lanRequest(
       "局域网直连请使用手机 Open Reading 应用扫码，浏览器不支持电脑证书配对",
     );
   const headers: Record<string, string> = { Authorization: "Bearer " + token };
+  if (requestHeaders.Range) headers.Range = requestHeaders.Range;
   let bytes: Blob | undefined;
   if (body instanceof FormData) {
     const request = new Request("https://localhost/", { method: "POST", body });

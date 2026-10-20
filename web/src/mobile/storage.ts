@@ -171,6 +171,102 @@ export async function storeBlob(key: string, blob: Blob) {
     recursive: true,
   });
 }
+
+export type DownloadChunk = { blob: Blob; total: number };
+function partialKey(key: string, offset: number) {
+  if (
+    !/^[a-f0-9]{64}$/.test(key) ||
+    !Number.isSafeInteger(offset) ||
+    offset < 0
+  )
+    throw Error("无效的下载断点");
+  return `openreading/partial/${key}/${offset}.json`;
+}
+export async function loadChunk(
+  key: string,
+  offset: number,
+): Promise<DownloadChunk | undefined> {
+  const path = partialKey(key, offset);
+  try {
+    let value;
+    if (native) {
+      const file = await Filesystem.readFile({
+        directory: Directory.Data,
+        path,
+        encoding: Encoding.UTF8,
+      });
+      value = JSON.parse(file.data as string);
+      const binary = atob(value.data),
+        bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      value.blob = new Blob([bytes]);
+    } else value = await idb(path);
+    if (
+      !value ||
+      !(value.blob instanceof Blob) ||
+      !Number.isSafeInteger(value.total) ||
+      value.total < 0 ||
+      (await hash(await value.blob.arrayBuffer())) !== value.hash
+    )
+      return undefined;
+    return { blob: value.blob, total: value.total };
+  } catch {
+    return undefined;
+  }
+}
+export async function saveChunk(
+  key: string,
+  offset: number,
+  chunk: DownloadChunk,
+) {
+  const path = partialKey(key, offset);
+  const digest = await hash(await chunk.blob.arrayBuffer());
+  if (!native) {
+    await idb(path, { ...chunk, hash: digest });
+    return;
+  }
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(chunk.blob);
+  });
+  await Filesystem.writeFile({
+    directory: Directory.Data,
+    path,
+    encoding: Encoding.UTF8,
+    data: JSON.stringify({ total: chunk.total, hash: digest, data }),
+    recursive: true,
+  });
+}
+export async function clearChunks(key: string) {
+  const directory = partialKey(key, 0).replace(/\/0\.json$/, "");
+  if (native) {
+    await Filesystem.rmdir({
+      directory: Directory.Data,
+      path: directory,
+      recursive: true,
+    }).catch(() => {});
+  } else {
+    const d = await db();
+    await new Promise<void>((resolve, reject) => {
+      const tx = d.transaction("data", "readwrite"),
+        store = tx.objectStore("data");
+      const request = store.openKeyCursor(
+        IDBKeyRange.bound(directory + "/", directory + "/\uffff"),
+      );
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }).finally(() => d.close());
+  }
+}
 export async function clearFiles() {
   if (native) {
     try {

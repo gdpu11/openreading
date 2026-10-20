@@ -43,7 +43,7 @@ public class LocalSyncPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 120)
         request.httpMethod = method; request.httpShouldHandleCookies = false
         let headers = call.getObject("headers") ?? [:]
-        for key in ["Authorization", "Content-Type"] { if let value = headers[key] as? String { request.setValue(value, forHTTPHeaderField: key) } }
+        for key in ["Authorization", "Content-Type", "Range"] { if let value = headers[key] as? String { request.setValue(value, forHTTPHeaderField: key) } }
         if let body = call.getString("body") {
             guard body.utf8.count <= 145 * 1024 * 1024, let data = Data(base64Encoded: body) else { call.reject("手机上传超过 100 MB 上限或数据无效"); return }
             request.httpBody = data

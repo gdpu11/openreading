@@ -2,12 +2,12 @@ import { validLAN, privateIPv4, lanRequest } from "./lan";
 import { ApiError, setReaderTransport } from "../api";
 import {
   cachedBlob,
-  storeBlob,
   hash,
   persistState,
   type Connection,
   type MobileState,
 } from "./storage";
+import { downloadBlob } from "./download";
 export function pairPayload(value: string) {
   const url = new URL(value);
   const payload = JSON.parse(
@@ -45,13 +45,22 @@ export async function remote(
   c: Connection,
   path: string,
   body?: any,
+  headers: Record<string, string> = {},
 ): Promise<any> {
   const r = await (
     c.certificateFingerprint
-      ? lanRequest(c.origin, c.certificateFingerprint, path, c.token, body)
+      ? lanRequest(
+          c.origin,
+          c.certificateFingerprint,
+          path,
+          c.token,
+          body,
+          headers,
+        )
       : fetch(c.origin + "/api" + path, {
           method: body === undefined ? "GET" : "POST",
           headers: {
+            ...headers,
             Authorization: "Bearer " + c.token,
             ...(body === undefined || body instanceof FormData
               ? {}
@@ -81,7 +90,7 @@ export async function remote(
       0,
     );
   });
-  if (!r.ok) {
+  if (!r.ok && !(r.status === 416 && headers.Range)) {
     const e = await r
       .json()
       .catch(() => ({ code: "SYNC_FAILED", message: "同步失败，请稍后重试" }));
@@ -123,34 +132,55 @@ export async function synchronize(
   // A fresh manifest is committed only after all blobs are complete and hashed.
   // Interrupted downloads keep the previous working offline library.
   const documents = library.workspaces.flatMap((w: any) => w.documents);
-  let done = 0;
+  onProgress("正在检查已下载文件…");
+  const cached = new Set<string>();
+  const pending = [];
   for (const d of documents) {
-    onProgress(`下载文件 ${++done}/${documents.length} · ${d.title}`);
     const wanted = new Set(
       [d.version?.id, ...d.threads.map((t: any) => t.originalVersionId)].filter(
         Boolean,
       ),
     );
-    for (const v of d.versions.filter((v: any) => wanted.has(v.id))) {
-      if (!(await cachedBlob(v.contentHash))) {
-        const response = await remote(
-          c,
-          `/sync/files/${encodeURIComponent(v.id)}?member=${encodeURIComponent(d.id)}`,
-        );
-        await storeBlob(v.contentHash, await response.blob());
-      }
-    }
+    const files = d.versions
+      .filter((v: any) => wanted.has(v.id))
+      .map((v: any) => ({
+        hash: v.contentHash,
+        size: v.size,
+        path: `/sync/files/${encodeURIComponent(v.id)}?member=${encodeURIComponent(d.id)}`,
+      }));
     for (const manifest of d.manifests) {
       for (const resource of manifest.resources) {
-        if (!(await cachedBlob(resource.blobHash))) {
-          const response = await remote(
-            c,
-            `/sync/resources/${encodeURIComponent(manifest.id)}?member=${encodeURIComponent(d.id)}&path=${encodeURIComponent(resource.path)}`,
-          );
-          await storeBlob(resource.blobHash, await response.blob());
-        }
+        files.push({
+          hash: resource.blobHash,
+          size: undefined,
+          path: `/sync/resources/${encodeURIComponent(manifest.id)}?member=${encodeURIComponent(d.id)}&path=${encodeURIComponent(resource.path)}`,
+        });
       }
     }
+    for (const f of files) {
+      if (!cached.has(f.hash) && (await cachedBlob(f.hash))) cached.add(f.hash);
+    }
+    if (files.some((f: any) => !cached.has(f.hash))) pending.push({ d, files });
+  }
+  let done = documents.length - pending.length;
+  onProgress(`已同步 ${done}/${documents.length} 个文件`);
+  for (const { d, files } of pending) {
+    for (const file of files) {
+      if (cached.has(file.hash)) continue;
+      await downloadBlob(
+        file.hash,
+        file.size,
+        (range) => remote(c, file.path, undefined, { Range: range }),
+        (received, total) => {
+          const percent = total ? Math.floor((received * 100) / total) : 0;
+          onProgress(
+            `已同步 ${done}/${documents.length} 个文件 · ${d.title} · ${percent}%`,
+          );
+        },
+      );
+      cached.add(file.hash);
+    }
+    onProgress(`已同步 ${++done}/${documents.length} 个文件`);
   }
   if (library.readingData) {
     // Old server versions remain usable for books/notes; new versions advertise

@@ -118,3 +118,26 @@ it("preserves multipart ORD uploads, including their boundary and binary payload
   expect(decoded.toString()).toContain('filename="book.ord"');
   vi.unstubAllGlobals();
 });
+
+it("forwards byte ranges to the pinned native connection and preserves Content-Range", async () => {
+  fake.request.mockResolvedValue({
+    status: 206,
+    headers: { "Content-Range": "bytes 2097152-2097154/2097155" },
+    body: btoa("end"),
+  });
+  const response = await lanRequest(
+    "https://10.0.0.5:53318",
+    "a".repeat(64),
+    "/sync/files/version?member=member",
+    "token",
+    undefined,
+    { Range: "bytes=2097152-2097154" },
+  );
+  expect(fake.request.mock.calls[0][0].headers.Range).toBe(
+    "bytes=2097152-2097154",
+  );
+  expect(response.headers.get("Content-Range")).toBe(
+    "bytes 2097152-2097154/2097155",
+  );
+  expect(await response.text()).toBe("end");
+});

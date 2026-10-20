@@ -775,5 +775,17 @@
   "修改同步范围": "Change sync selection",
   "保存同步范围": "Save sync selection",
   "修改后下次同步生效。已下载的本地副本不会自动删除，未同步笔记会保留在手机。": "Changes apply on the next sync. Downloaded copies are not automatically deleted; pending notes remain on the phone.",
-  "同步范围已保存，下次手机同步时生效。": "Sync selection saved. It will apply the next time the phone syncs."
+  "同步范围已保存，下次手机同步时生效。": "Sync selection saved. It will apply the next time the phone syncs.",
+  "正在检查已下载文件…": "Checking downloaded files…",
+  "已同步 {0}/{1} 个文件": "Synced {0}/{1} files",
+  "已同步 {0}/{1} 个文件 · {2} · {3}%": "Synced {0}/{1} files · {2} · {3}%",
+  "同步已中断，进度已保存 · 笔记等待同步": "Sync interrupted; progress saved · Notes pending",
+  "同步已中断，进度已保存，下次将继续": "Sync interrupted; progress saved for next time",
+  "无效的下载断点": "Invalid download checkpoint",
+  "文件大小无效或超过手机直连下载上限": "Invalid file size or file exceeds the mobile download limit",
+  "下载文件长度不一致，请重试": "Downloaded file size does not match; please retry",
+  "下载断点响应无效，请重试": "Invalid partial download response; please retry",
+  "下载断点与文件不一致，请重试": "Partial download does not match the file; please retry",
+  "文件下载中断，下次将从已保存进度继续": "Download interrupted; next sync will resume from saved progress",
+  "文件校验失败，下载断点已清除，请重新同步": "File verification failed; saved chunks cleared. Please sync again"
 }

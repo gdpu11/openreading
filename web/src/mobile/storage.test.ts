@@ -22,7 +22,10 @@ vi.mock("@capacitor/filesystem", () => ({
       }
       fake.files.set(path, data);
     },
-    rmdir: async () => fake.files.clear(),
+    rmdir: async ({ path }: any) => {
+      for (const key of fake.files.keys())
+        if (key.startsWith(path + "/")) fake.files.delete(key);
+    },
   },
 }));
 import {
@@ -31,6 +34,9 @@ import {
   emptyState,
   hash,
   cachedBlob,
+  loadChunk,
+  saveChunk,
+  clearChunks,
 } from "./storage";
 describe("native durable offline queue", () => {
   it("recovers the previous valid queue after an interrupted native state write", async () => {
@@ -59,6 +65,45 @@ describe("native durable offline queue", () => {
     await Promise.all([a, b]);
     expect((await loadState()).drafts.note).toBe("b");
   });
+});
+
+it("persists native download chunks and discards interrupted or corrupt writes", async () => {
+  vi.stubGlobal(
+    "FileReader",
+    class {
+      result = "";
+      onload = () => {};
+      async readAsDataURL(blob: Blob) {
+        this.result =
+          "data:;base64," +
+          Buffer.from(await blob.arrayBuffer()).toString("base64");
+        this.onload();
+      }
+    },
+  );
+  try {
+    const blob = new Blob(["a saved range"]),
+      key = "a".repeat(64);
+    await saveChunk(key, 0, { blob, total: 100 });
+    expect(await (await loadChunk(key, 0))?.blob.text()).toBe("a saved range");
+    fake.fail = true;
+    await expect(
+      saveChunk(key, blob.size, { blob, total: 100 }),
+    ).rejects.toThrow("disk full");
+    fake.fail = false;
+    expect(await loadChunk(key, blob.size)).toBeUndefined();
+    expect(await (await loadChunk(key, 0))?.blob.text()).toBe("a saved range");
+    const path = `openreading/partial/${key}/0.json`;
+    const record = JSON.parse(fake.files.get(path)!);
+    record.data = btoa("corrupted");
+    fake.files.set(path, JSON.stringify(record));
+    expect(await loadChunk(key, 0)).toBeUndefined();
+    await clearChunks(key);
+    expect(fake.files.has(path)).toBe(false);
+  } finally {
+    fake.fail = false;
+    vi.unstubAllGlobals();
+  }
 });
 
 it("reads verified native files without any network or data-URL fetch", async () => {

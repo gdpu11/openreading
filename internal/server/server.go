@@ -229,8 +229,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if nativeSync && nativeOrigin {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Range")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
 			return

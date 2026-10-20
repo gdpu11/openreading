@@ -130,7 +130,9 @@ export function MobileApp() {
             : e.message || "网络暂时不可用，继续离线阅读；联网后可重试",
       );
       setStatus(
-        state.current.outbox.length ? "离线书库 · 笔记等待同步" : "离线书库",
+        state.current.outbox.length
+          ? "同步已中断，进度已保存 · 笔记等待同步"
+          : "同步已中断，进度已保存，下次将继续",
       );
     } finally {
       syncing.current = false;
