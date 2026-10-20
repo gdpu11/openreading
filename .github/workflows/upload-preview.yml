@@ -1,0 +1,57 @@
+name: Upload validated preview artifacts
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful native client build run ID
+        required: true
+        type: string
+      tag:
+        description: Existing draft preview release tag
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: ${{ inputs.run_id }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify provenance and upload to draft
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, re, shutil, subprocess
+          repo, run_id, tag = os.environ['GITHUB_REPOSITORY'], os.environ['BUILD_RUN'], os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'[0-9]+', run_id)
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+', tag)
+          def api(route):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + repo + route]))
+          run = api('/actions/runs/' + run_id)
+          release = api('/releases/tags/' + tag)
+          assert run['conclusion'] == 'success' and run['path'] == '.github/workflows/native-builds.yml'
+          assert release['draft'], 'Only existing draft releases may be changed'
+          target = release['target_commitish']
+          changed = subprocess.check_output(['git', 'diff', '--name-only', run['head_sha'], target]).decode().splitlines()
+          assert all(p == 'SOURCE_SHA256SUMS' or p.startswith(('tests/', 'docs/', '.github/')) for p in changed), 'Application sources differ from the validated build'
+          subprocess.run(['gh', 'run', 'download', run_id, '--repo', repo, '--dir', 'artifacts'], check=True)
+          dest = pathlib.Path('preview-assets'); dest.mkdir()
+          version = json.loads(pathlib.Path('package.json').read_text())['version']
+          for source in pathlib.Path('artifacts').rglob('*'):
+              if not source.is_file() or source.suffix not in {'.dmg', '.zip', '.exe', '.apk'}:
+                  continue
+              name = 'Open-Reading-' + version + '-android-debug.apk' if source.name == 'app-debug.apk' else source.name
+              target = dest / name
+              assert not target.exists(), 'Duplicate release asset name'
+              shutil.move(str(source), target)
+          files = sorted(dest.iterdir())
+          assert files, 'No install artifacts found'
+          checksums = dest / 'SHA256SUMS'
+          checksums.write_text(''.join(hashlib.file_digest(p.open('rb'), 'sha256').hexdigest() + '  ' + p.name + '\n' for p in files))
+          subprocess.run(['gh', 'release', 'upload', tag, '--repo', repo, '--clobber', *map(str, files), str(checksums)], check=True)
