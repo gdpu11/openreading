@@ -163,7 +163,9 @@ test("mobile production PDF worker renders an offline PDF", async ({
   await page.goto(origin + "/mobile");
   await page.getByRole("button", { name: /兼容性 PDF/ }).click();
   const firstPage = page.locator('.pdf-page[data-page-index="0"]');
-  await expect(firstPage.locator(".textLayer")).toContainText("LEFT Idempotency");
+  await expect(firstPage.locator(".textLayer")).toContainText(
+    "LEFT Idempotency",
+  );
   await expect(firstPage.locator(".pdf-page-loading")).toHaveCount(0);
   expect(
     await firstPage
@@ -171,4 +173,78 @@ test("mobile production PDF worker renders an offline PDF", async ({
       .evaluate((canvas: HTMLCanvasElement) => canvas.width),
   ).toBeGreaterThan(0);
   expect(errors).toEqual([]);
+});
+
+test("Android scan starts automatically and hands the QR to native pairing", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("open-reading-language", "zh");
+    (window as any).androidBridge = {};
+    const pairing = {
+      origin: "https://192.168.1.2:53318",
+      id: "a".repeat(32),
+      secret: "b".repeat(64),
+      certificateFingerprint: "c".repeat(64),
+    };
+    (window as any).__nativeCalls = [];
+    (window as any).Capacitor = {
+      PluginHeaders: [
+        {
+          name: "DeviceVault",
+          methods: [
+            { name: "get", rtype: "promise" },
+            { name: "set", rtype: "promise" },
+          ],
+        },
+        { name: "App", methods: [{ name: "addListener" }] },
+        {
+          name: "CapacitorBarcodeScanner",
+          methods: [{ name: "scanBarcode", rtype: "promise" }],
+        },
+        { name: "LocalSync", methods: [{ name: "request", rtype: "promise" }] },
+      ],
+      nativeCallback: () => "test-listener",
+      nativePromise: async (plugin: string, method: string, options: any) => {
+        (window as any).__nativeCalls.push({ plugin, method, options });
+        if (plugin === "CapacitorBarcodeScanner")
+          return {
+            ScanResult:
+              pairing.origin +
+              "/mobile#pair=" +
+              encodeURIComponent(JSON.stringify(pairing)),
+            format: 0,
+          };
+        if (plugin === "LocalSync")
+          return {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+            body: btoa(
+              JSON.stringify({ state: "claimed", fingerprint: "123456" }),
+            ),
+          };
+        return {};
+      },
+    };
+  });
+  await page.goto(origin);
+  await page
+    .getByRole("button", { name: "扫描电脑二维码", exact: true })
+    .click();
+  await expect(page.locator(".mobile-approval")).toContainText("123456");
+  await expect(page.getByRole("status")).toHaveText(
+    "请在电脑端核对确认码并授权",
+  );
+  const calls = await page.evaluate(() => (window as any).__nativeCalls);
+  const scan = calls.find(
+    (call: any) => call.plugin === "CapacitorBarcodeScanner",
+  );
+  expect(scan.options).toMatchObject({ hint: 0, scanButton: false });
+  const claim = calls.find(
+    (call: any) =>
+      call.plugin === "LocalSync" &&
+      call.options.url.endsWith("/api/pair/claim"),
+  );
+  expect(claim.options.fingerprint).toBe("c".repeat(64));
+  expect(claim.options.method).toBe("POST");
 });

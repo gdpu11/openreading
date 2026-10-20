@@ -249,7 +249,7 @@ export function MobileApp() {
       const v = await CapacitorBarcodeScanner.scanBarcode({
         hint: 0,
         scanInstructions: "扫描电脑 Open Reading 设置中的配对二维码",
-        scanButton: true,
+        scanButton: false,
         scanText: "扫描二维码",
         cancelButtonAccessibilityLabel: "取消扫描",
       });

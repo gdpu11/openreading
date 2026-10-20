@@ -7,6 +7,7 @@ const {
   session,
   powerMonitor,
   ipcMain,
+  screen,
 } = require("electron");
 const { spawn } = require("node:child_process");
 const { join } = require("node:path");
@@ -400,10 +401,36 @@ async function closeWindow(window) {
   return window.closing;
 }
 function createWindow(target) {
+  const library = target && win && !win.isDestroyed() ? win.getBounds() : null;
+  const area = library ? screen.getDisplayMatching(library).workArea : null;
+  const width = library
+    ? Math.max(600, Math.min(1200, library.width - 120, area.width - 48))
+    : 1420;
+  const height = library
+    ? Math.max(560, Math.min(800, library.height - 100, area.height - 48))
+    : 960;
   const window = new BrowserWindow({
     title: "Open Reading",
-    width: 1420,
-    height: 960,
+    width,
+    height,
+    ...(library
+      ? {
+          x: Math.max(
+            area.x,
+            Math.min(
+              library.x + Math.round((library.width - width) / 2),
+              area.x + area.width - width,
+            ),
+          ),
+          y: Math.max(
+            area.y,
+            Math.min(
+              library.y + Math.round((library.height - height) / 2),
+              area.y + area.height - height,
+            ),
+          ),
+        }
+      : {}),
     minWidth: 600,
     minHeight: 560,
     show: false,
@@ -511,6 +538,11 @@ if (!app.requestSingleInstanceLock()) {
         systemReadingActive = powerMonitor.getSystemIdleState(120) !== "locked";
         readingSystemState();
       });
+    // Native activation events can report a transitional focus/visibility state.
+    // Reconcile after it settles, even when no further window event arrives.
+    const readingStateTimer = setInterval(readingSystemState, 1000);
+    readingStateTimer.unref();
+    app.once("will-quit", () => clearInterval(readingStateTimer));
     session.defaultSession.setPermissionRequestHandler(
       (wc, permission, callback, details) => {
         const window = BrowserWindow.fromWebContents(wc);

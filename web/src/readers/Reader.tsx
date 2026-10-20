@@ -111,6 +111,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       passwordCallback = useRef<any>(null),
       book = useRef<any>(null),
       rendition = useRef<any>(null);
+    const epubHighlights = useRef(new Set<string>());
     const latest = useRef(props);
     latest.current = props;
     const outlineRef = useRef<OutlineItem[]>([]);
@@ -734,6 +735,13 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       if ((!el && doc.format !== "pdf") || !host.current) return;
       const hostBox = host.current.getBoundingClientRect();
       const list: any[] = [];
+      // EPUB highlights live in the rendition's own registry, unlike the
+      // React overlay. Remove the previous set before painting current data.
+      if (doc.format === "epub" && rendition.current) {
+        for (const cfi of epubHighlights.current)
+          rendition.current.annotations.remove(cfi, "highlight");
+        epubHighlights.current.clear();
+      }
       for (const a of latest.current.annotations) {
         let anchor: Anchor = a.anchor;
         let state = "resolved";
@@ -771,6 +779,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           const sel = anchor.selectors.find((x) => x.type === "epub");
           if (sel?.type === "epub" && rendition.current) {
             try {
+              epubHighlights.current.add(sel.cfi);
               rendition.current.annotations.remove(sel.cfi, "highlight");
               rendition.current.annotations.highlight(
                 sel.cfi,
@@ -935,6 +944,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       epubIndexReady.current = false;
       setError("");
       setMarks([]);
+      epubHighlights.current.clear();
       setManifest(doc.resourceManifestId);
       setResources([]);
       captured.current = null;

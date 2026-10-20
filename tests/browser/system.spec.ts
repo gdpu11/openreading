@@ -3328,3 +3328,76 @@ test("Typing or pasting @小阅 in a comment asks the assistant", async ({
   expect(reply.request().postDataJSON().message.recipient).toBe("assistant");
   await expect(page.locator(".assistant-body")).toHaveCount(2);
 });
+
+test("Deleting EPUB annotations clears their highlights immediately and after redisplay", async ({
+  page,
+}) => {
+  const sourcePath = path.join(dataDir, "annotation-deletion");
+  await mkdir(sourcePath);
+  await copyFile(
+    "fixtures/可靠接口.epub",
+    path.join(sourcePath, "标注删除.epub"),
+  );
+  const source = await post(`/workspaces/${workspace.id}/sources`, {
+    path: sourcePath,
+    label: "Highlight deletion",
+  });
+  await expect
+    .poll(async () => (await get(`/scans/${source.scan.id}`)).state)
+    .toBe("completed");
+  docs = (await get(`/workspaces/${workspace.id}/documents`)).items;
+  await page.reload();
+  await openFile(page, "标注删除.epub");
+  const paragraph = page
+    .frameLocator(".epub-container iframe")
+    .locator("p")
+    .first();
+  const create = async (quote: string) => {
+    await selectText(paragraph, quote);
+    const saved = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/threads") && r.request().method() === "POST",
+    );
+    await page.getByTitle("保存划线", { exact: true }).click();
+    const response = await saved;
+    expect(response.ok(), await response.text()).toBeTruthy();
+    const { threadId } = await response.json();
+    await expect(
+      page.locator(`.epub-highlight[data-thread-id="${threadId}"]`).first(),
+    ).toBeVisible();
+    return threadId;
+  };
+  const kept = await create("幂等性意味着重复执行同一操作");
+  const removed = await create("最终效果与执行一次相同");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTitle("删除批注", { exact: true }).click();
+  await expect(page.locator(".thread-card")).toHaveCount(1);
+  await expect(
+    page.locator(`.epub-highlight[data-thread-id="${removed}"]`),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(`.epub-highlight[data-thread-id="${kept}"]`).first(),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTitle("删除批注", { exact: true }).click();
+  await expect(page.locator(".thread-card")).toHaveCount(0);
+  await expect(page.locator(".epub-highlight")).toHaveCount(0);
+  await page.getByLabel("页面布局").selectOption("double");
+  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page
+    .locator(".outline")
+    .getByRole("button", { name: "事务", exact: true })
+    .click();
+  await expect(
+    page.frameLocator(".epub-container iframe").locator("h1"),
+  ).toContainText("事务");
+  await page
+    .locator(".outline")
+    .getByRole("button", { name: "接口重试", exact: true })
+    .click();
+  await expect(paragraph).toContainText("幂等性意味着");
+  await expect(page.locator(".epub-highlight")).toHaveCount(0);
+  await page.reload();
+  await expect(paragraph).toContainText("幂等性意味着");
+  await expect(page.locator(".epub-highlight")).toHaveCount(0);
+});
