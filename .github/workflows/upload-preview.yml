@@ -47,6 +47,7 @@ jobs:
               if not source.is_file() or source.suffix not in {'.dmg', '.zip', '.exe', '.apk'}:
                   continue
               name = 'Open-Reading-' + version + '-android-debug.apk' if source.name == 'app-debug.apk' else source.name
+              name = name.replace(' ', '.')
               target = dest / name
               assert not target.exists(), 'Duplicate release asset name'
               shutil.move(str(source), target)
