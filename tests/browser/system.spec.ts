@@ -216,6 +216,11 @@ test.beforeEach(async ({ context, page }) => {
     });
   }
   await context.addCookies(storage.cookies);
+  const language = await client.put(base + "/api/preferences", {
+    headers: { "X-CSRF-Token": csrf },
+    data: { language: "zh" },
+  });
+  expect(language.ok(), await language.text()).toBeTruthy();
   await page.addInitScript(() =>
     localStorage.setItem("open-reading-language", "zh"),
   );
@@ -3332,8 +3337,9 @@ test("Typing or pasting @小阅 in a comment asks the assistant", async ({
 test("Deleting EPUB annotations clears their highlights immediately and after redisplay", async ({
   page,
 }) => {
-  const sourcePath = path.join(dataDir, "annotation-deletion");
-  await mkdir(sourcePath);
+  const sourcePath = await mkdtemp(
+    path.join(tmpdir(), "openreading-annotation-deletion-"),
+  );
   await copyFile(
     "fixtures/可靠接口.epub",
     path.join(sourcePath, "标注删除.epub"),
