@@ -36,11 +36,9 @@ export function desktopTarget(
     goos: platform === "win32" ? "windows" : "darwin",
     goarch: arch === "x64" ? "amd64" : "arm64",
     builderArgs: [
-      platform === "win32" ? "--win" : "--mac",
-      "--" + arch,
-      ...args.filter(
-        (arg) => !platforms.includes(arg) && !arches.includes(arg),
-      ),
+      ...(platforms.length ? [] : [platform === "win32" ? "--win" : "--mac"]),
+      ...args,
+      ...(arches.length ? [] : ["--" + arch]),
     ],
   };
 }

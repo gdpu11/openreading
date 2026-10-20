@@ -14,6 +14,10 @@ test("Intel Mac and Windows build matching Go and Electron architectures on an A
   const mac = desktopTarget(["--mac", "--x64", "--dir"], "darwin", "arm64");
   assert.equal(mac.goos, "darwin");
   assert.equal(mac.goarch, "amd64");
+  assert.deepEqual(
+    desktopTarget(["--mac", "zip", "--x64"], "darwin", "arm64").builderArgs,
+    ["--mac", "zip", "--x64"],
+  );
   assert.deepEqual(mac.builderArgs, ["--mac", "--x64", "--dir"]);
   const win = desktopTarget(["--win"], "darwin", "arm64");
   assert.equal(win.goos, "windows");
