@@ -1274,6 +1274,9 @@ for (const [format, file] of [
   }) => {
     await page.clock.install();
     await openFile(page, file);
+    // Footer metadata loads asynchronously and can wrap onto another line.
+    // Finish that layout change before measuring the fullscreen geometry.
+    await expect(page.locator(".estimated-reading-time")).toBeVisible();
     if (format === "epub")
       await page.getByLabel("页面布局").selectOption("double");
     await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));

@@ -6,7 +6,7 @@ import path from "node:path";
 
 test("A18 Chrome Firefox and WebKit pair with one code and keep independent sessions", async () => {
   test.setTimeout(60000);
-  const evidence = path.resolve("docs/evidence");
+  const evidence = path.resolve(process.env.OR_EVIDENCE_DIR || "docs/evidence");
   await mkdir(evidence, { recursive: true });
   const dataDir = await mkdtemp(path.join(tmpdir(), "openreading-pairing-"));
   const processHandle: ChildProcess = spawn(path.resolve("release/openreading"), ["--data-dir", dataDir, "--port", "0"], { stdio: ["ignore", "pipe", "pipe"] });
@@ -31,7 +31,7 @@ test("A18 Chrome Firefox and WebKit pair with one code and keep independent sess
         reject(Error("Pairing server exited during startup"));
       });
     });
-    browsers.push(await chromium.launch({ executablePath: process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true }));
+    browsers.push(await chromium.launch({ executablePath: process.env.CHROME_PATH || (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : chromium.executablePath()), headless: true }));
     browsers.push(await firefox.launch({ executablePath: firefox.executablePath(), headless: true, timeout: 10000 }));
     browsers.push(await webkit.launch({ executablePath: webkit.executablePath(), headless: true, timeout: 10000 }));
     const pages: Page[] = [];

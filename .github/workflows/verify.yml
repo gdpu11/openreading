@@ -22,7 +22,7 @@ jobs:
       - run: go test ./... -count=1 -timeout=180s
       - run: go test ./internal/server -race -count=1 -timeout=180s
       - run: go build -trimpath -o release/openreading ./cmd/openreading
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npx playwright test tests/browser/system.spec.ts tests/browser/pairing.spec.ts
         env:
           OR_REPORT_FILE: release/browser-results.json
