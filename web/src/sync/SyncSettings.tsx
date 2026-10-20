@@ -3,9 +3,25 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { api } from "../api";
 import { MobileDownload } from "./MobileDownload";
+import {
+  SyncScopePicker,
+  validSelection,
+  type SyncSelection,
+  type SyncFile,
+} from "./SyncScopePicker";
 export function SyncSettings({ onError }: { onError: (e: any) => void }) {
   const [workspaces, setWorkspaces] = useState<any[]>([]),
-    [selected, setSelected] = useState<string[]>([]),
+    [selection, setSelection] = useState<SyncSelection>({
+      workspaceIds: [],
+      syncScope: { mode: "all" },
+    }),
+    [files, setFiles] = useState<SyncFile[] | null>(null),
+    [editing, setEditing] = useState<string | null>(null),
+    [deviceSelection, setDeviceSelection] = useState<SyncSelection>({
+      workspaceIds: [],
+      syncScope: { mode: "all" },
+    }),
+    [savedDevice, setSavedDevice] = useState<string | null>(null),
     [devices, setDevices] = useState<any[]>([]),
     [grant, setGrant] = useState<any>(null),
     [status, setStatus] = useState<any>(null),
@@ -33,9 +49,13 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
     void api("/workspaces")
       .then((v) => {
         setWorkspaces(v);
-        setSelected(v.map((w: any) => w.id));
+        setSelection({
+          workspaceIds: v.map((w: any) => w.id),
+          syncScope: { mode: "all" },
+        });
       })
       .catch(onError);
+    void api("/pair/catalog").then(setFiles).catch(onError);
     void reload();
     void loadLAN().catch(onError);
   }, []);
@@ -56,7 +76,7 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
     setBusy(true);
     try {
       const next = await api("/pair/grants", "POST", {
-        workspaceIds: selected,
+        ...selection,
         ...(cloud ? {} : { origin }),
       });
       setGrant(next);
@@ -186,29 +206,30 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
       )}
       {(cloud || lan?.enabled) && (
         <>
-          <fieldset>
-            <legend>{tr("允许这部手机同步的工作区")}</legend>
-            {workspaces.map((ws) => (
-              <label className="sync-workspace" key={ws.id}>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(ws.id)}
-                  onChange={(e) =>
-                    setSelected(
-                      e.target.checked
-                        ? [...selected, ws.id]
-                        : selected.filter((id) => id !== ws.id),
-                    )
-                  }
-                />
-                {ws.name}
-              </label>
-            ))}
-            {!workspaces.length && <p>{tr("请先创建工作区并导入文件。")}</p>}
-          </fieldset>
+          {files ? (
+            <SyncScopePicker
+              workspaces={workspaces}
+              files={files}
+              value={selection}
+              disabled={busy}
+              onChange={(value) => {
+                setSelection(value);
+                setGrant(null);
+                setStatus(null);
+                setImage("");
+              }}
+            />
+          ) : (
+            <p>{tr("正在加载文件列表…")}</p>
+          )}
           <button
             className="primary"
-            disabled={busy || !selected.length || (!cloud && !origin)}
+            disabled={
+              busy ||
+              !files ||
+              !validSelection(selection) ||
+              (!cloud && !origin)
+            }
             onClick={generate}
           >
             {tr("生成手机配对二维码")}
@@ -281,26 +302,89 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
         <p>{tr("还没有配对设备。")}</p>
       ) : (
         devices.map((d) => (
-          <div className="device-row" key={d.id}>
-            <div>
-              <strong>{d.name}</strong>
-              <small>
-                {d.revokedAt
-                  ? tr("已撤销")
-                  : new Date(d.expiresAt * 1000).toLocaleDateString(locale()) +
-                    tr(" 到期")}
-              </small>
+          <div className="device-entry" key={d.id}>
+            <div className="device-row">
+              <div>
+                <strong>{d.name}</strong>
+                <small>
+                  {d.revokedAt
+                    ? tr("已撤销")
+                    : new Date(d.expiresAt * 1000).toLocaleDateString(
+                        locale(),
+                      ) + tr(" 到期")}
+                </small>
+              </div>
+              {!d.revokedAt && (
+                <div className="device-actions">
+                  <button
+                    disabled={busy || !files}
+                    onClick={() => {
+                      setEditing(d.id);
+                      setSavedDevice(null);
+                      setDeviceSelection({
+                        workspaceIds: d.workspaceIds,
+                        syncScope: { mode: "all", ...d.syncScope },
+                      });
+                    }}
+                  >
+                    {tr("修改同步范围")}
+                  </button>
+                  <button
+                    onClick={() =>
+                      api("/devices/" + d.id, "DELETE")
+                        .then(reload)
+                        .catch(onError)
+                    }
+                  >
+                    {tr("撤销授权")}
+                  </button>
+                </div>
+              )}
             </div>
-            {!d.revokedAt && (
-              <button
-                onClick={() =>
-                  api("/devices/" + d.id, "DELETE")
-                    .then(reload)
-                    .catch(onError)
-                }
-              >
-                {tr("撤销授权")}
-              </button>
+            {editing === d.id && !d.revokedAt && files && (
+              <div className="device-scope-editor">
+                <SyncScopePicker
+                  workspaces={workspaces}
+                  files={files}
+                  value={deviceSelection}
+                  onChange={setDeviceSelection}
+                  disabled={busy}
+                />
+                <p>
+                  {tr(
+                    "修改后下次同步生效。已下载的本地副本不会自动删除，未同步笔记会保留在手机。",
+                  )}
+                </p>
+                <button
+                  className="primary"
+                  disabled={busy || !validSelection(deviceSelection)}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await api(
+                        "/devices/" + d.id + "/scope",
+                        "PUT",
+                        deviceSelection,
+                      );
+                      await reload();
+                      setEditing(null);
+                      setSavedDevice(d.id);
+                    } catch (e) {
+                      onError(e);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {tr("保存同步范围")}
+                </button>
+                <button disabled={busy} onClick={() => setEditing(null)}>
+                  {tr("取消")}
+                </button>
+              </div>
+            )}
+            {savedDevice === d.id && (
+              <p role="status">{tr("同步范围已保存，下次手机同步时生效。")}</p>
             )}
           </div>
         ))

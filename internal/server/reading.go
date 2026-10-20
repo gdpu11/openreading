@@ -56,15 +56,16 @@ func (s *Server) saveReading(r *http.Request, phone bool) error {
 	})
 }
 func (s *Server) readingData(q querier, d M) (M, error) {
-	rows, e := all(q, `SELECT r.id,r.workspace_document_id AS member,r.started_at,r.ended_at,wd.workspace_id,
+	rows, e := all(q, `SELECT r.id,r.workspace_document_id AS member,r.started_at,r.ended_at,wd.workspace_id,d.format,
  COALESCE((SELECT e.relative_path FROM source_entries e JOIN document_bindings b ON b.source_entry_id=e.id WHERE b.workspace_document_id=wd.id ORDER BY (b.state='active') DESC,e.relative_path LIMIT 1),'历史文档') AS title
- FROM reading_events r JOIN workspace_documents wd ON wd.id=r.workspace_document_id ORDER BY r.started_at,r.id`)
+ FROM reading_events r JOIN workspace_documents wd ON wd.id=r.workspace_document_id JOIN documents d ON d.id=wd.document_id ORDER BY r.started_at,r.id`)
 	if e != nil {
 		return nil, e
 	}
 	events := []M{}
 	for _, v := range rows {
-		if d == nil || deviceWorkspace(d, str(v, "workspaceId")) {
+		if d == nil || deviceDocument(d, M{"id": v["member"], "workspaceId": v["workspaceId"], "format": v["format"]}) {
+			delete(v, "format")
 			delete(v, "workspaceId")
 			events = append(events, v)
 		}

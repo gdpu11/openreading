@@ -124,7 +124,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(8)
-	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql"} {
+	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql", "005.sql"} {
 		schema, err := assets.ReadFile("migrations/" + migration)
 		if err == nil {
 			_, err = db.Exec(string(schema))
@@ -313,7 +313,7 @@ func decode(r *http.Request, v any) error {
 func body(r *http.Request) (M, error) { m := M{}; e := decode(r, &m); return m, e }
 func (s *Server) routes() {
 	s.route("GET /api/health", func(w http.ResponseWriter, r *http.Request) error {
-		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 4, "serverMode": s.cfg.PublicOrigin != ""})
+		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 5, "serverMode": s.cfg.PublicOrigin != ""})
 	})
 	s.route("POST /api/session", func(w http.ResponseWriter, r *http.Request) error {
 		b, e := body(r)

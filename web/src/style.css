@@ -2665,3 +2665,19 @@ small {
     gap: 5px;
   }
 }
+
+.sync-scope-mode, .sync-file-tools, .sync-format-options, .device-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sync-scope-mode { margin: 12px 10px; }
+.sync-file-tools { margin: 12px 0; }
+.sync-file-tools > input { flex: 1; min-width: 120px; }
+.sync-file-list { max-height: 300px; overflow: auto; border-top: 1px solid var(--line); }
+.sync-file-list .sync-workspace > input { flex-shrink: 0; }
+.sync-file-list .sync-workspace > span { min-width: 0; overflow-wrap: anywhere; }
+.sync-file-list small { display: block; color: var(--muted); margin-top: 4px; }
+.sync-scope-summary { margin: 12px 10px; font-size: 13px; }
+.device-scope-editor > button { margin-right: 8px; }

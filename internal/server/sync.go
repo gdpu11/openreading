@@ -22,7 +22,7 @@ func (s *Server) authenticateDevice(r *http.Request) (M, error) {
 	if len(token) != 64 {
 		return nil, problem(401, "DEVICE_REQUIRED", "设备授权已失效，请在电脑端重新扫码", false)
 	}
-	returnDevice, e := one(s.db, "SELECT * FROM paired_devices WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?", digest([]byte(token)), time.Now().Unix())
+	returnDevice, e := one(s.db, "SELECT d.*,COALESCE(s.scope_json,'{}') AS sync_scope_json FROM paired_devices d LEFT JOIN device_sync_scopes s ON s.device_id=d.id WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?", digest([]byte(token)), time.Now().Unix())
 	if e != nil {
 		return nil, problem(401, "DEVICE_REQUIRED", "设备授权已失效，请在电脑端重新扫码", false)
 	}
@@ -38,7 +38,7 @@ func deviceWorkspace(d M, w string) bool {
 }
 func (s *Server) syncMember(q querier, d M, member string) (M, error) {
 	m, e := s.member(q, member)
-	if e != nil || !deviceWorkspace(d, str(m, "workspaceId")) {
+	if e != nil || !deviceDocument(d, m) {
 		return nil, problem(403, "SYNC_SCOPE", "此文档不在设备授权范围内", false)
 	}
 	return m, nil
@@ -50,6 +50,7 @@ func fingerprint(hash string) string {
 	return strings.ToUpper(hash[:4] + "-" + hash[4:8])
 }
 func (s *Server) syncRoutes() {
+	s.syncScopeRoutes()
 	s.route("POST /api/pair/grants", func(w http.ResponseWriter, r *http.Request) error {
 		b, e := body(r)
 		if e != nil {
@@ -59,18 +60,9 @@ func (s *Server) syncRoutes() {
 		if e != nil {
 			return e
 		}
-		scopes := arr(b, "workspaceIds")
-		if len(scopes) == 0 || len(scopes) > 100 {
-			return problem(400, "SYNC_SCOPE", "请选择需要同步的工作区", false)
-		}
-		for _, v := range scopes {
-			ws, ok := v.(string)
-			if !ok {
-				return problem(400, "SYNC_SCOPE", "工作区无效", false)
-			}
-			if _, e = one(s.db, "SELECT id FROM workspaces WHERE id=?", ws); e != nil {
-				return e
-			}
+		scopes, scope, e := s.validateSyncScope(s.db, b)
+		if e != nil {
+			return e
 		}
 		grant, secret := id(), id()+id()
 		expiry := time.Now().Add(3 * time.Minute).Unix()
@@ -85,7 +77,10 @@ func (s *Server) syncRoutes() {
 			if len(active) >= 10 {
 				return problem(429, "PAIR_LIMIT", "待配对设备过多，请取消旧二维码或稍后重试", true)
 			}
-			return exec(tx, "INSERT INTO pairing_grants(id,secret_hash,workspace_ids_json,expires_at) VALUES(?,?,?,?)", grant, digest([]byte(secret)), js(scopes), expiry)
+			if e := exec(tx, "INSERT INTO pairing_grants(id,secret_hash,workspace_ids_json,expires_at) VALUES(?,?,?,?)", grant, digest([]byte(secret)), js(scopes), expiry); e != nil {
+				return e
+			}
+			return exec(tx, "INSERT INTO pairing_sync_scopes VALUES(?,?)", grant, js(scope))
 		})
 		if e != nil {
 			return e
@@ -147,7 +142,7 @@ func (s *Server) syncRoutes() {
 	s.route("POST /api/pair/grants/{g}/approve", func(w http.ResponseWriter, r *http.Request) error {
 		var result M
 		e := s.transaction(func(tx *sql.Tx) error {
-			g, e := one(tx, "SELECT * FROM pairing_grants WHERE id=? AND expires_at>? AND state='claimed'", r.PathValue("g"), time.Now().Unix())
+			g, e := one(tx, `SELECT g.*,COALESCE(s.scope_json,'{"mode":"all"}') AS sync_scope_json FROM pairing_grants g LEFT JOIN pairing_sync_scopes s ON s.grant_id=g.id WHERE g.id=? AND expires_at>? AND state='claimed'`, r.PathValue("g"), time.Now().Unix())
 			if e != nil {
 				return problem(409, "INVALID_PAIR", "设备尚未扫描，或二维码已过期", false)
 			}
@@ -162,6 +157,9 @@ func (s *Server) syncRoutes() {
 				return err
 			}
 			if e != nil {
+				return e
+			}
+			if e = exec(tx, "INSERT INTO device_sync_scopes VALUES(?,?) ON CONFLICT(device_id) DO UPDATE SET scope_json=excluded.scope_json", d, js(g["syncScope"])); e != nil {
 				return e
 			}
 			if e = exec(tx, "UPDATE pairing_grants SET state='approved',device_id=? WHERE id=?", d, g["id"]); e != nil {
@@ -183,7 +181,7 @@ func (s *Server) syncRoutes() {
 		return send(w, M{"ok": true})
 	})
 	s.route("GET /api/devices", func(w http.ResponseWriter, r *http.Request) error {
-		v, e := all(s.db, "SELECT id,name,workspace_ids_json,created_at,expires_at,revoked_at FROM paired_devices ORDER BY created_at DESC")
+		v, e := all(s.db, "SELECT d.id,name,workspace_ids_json,created_at,expires_at,revoked_at,COALESCE(s.scope_json,'{}') AS sync_scope_json FROM paired_devices d LEFT JOIN device_sync_scopes s ON s.device_id=d.id ORDER BY created_at DESC")
 		if e != nil {
 			return e
 		}
@@ -269,11 +267,17 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 			if e != nil {
 				return e
 			}
-			docs, e := all(tx, "SELECT wd.id,wd.document_id,d.format,COALESCE(lb.favorite,0) AS favorite,COALESCE(lb.finished_at,'') AS finished_at FROM workspace_documents wd JOIN documents d ON d.id=wd.document_id LEFT JOIN library_books lb ON lb.workspace_document_id=wd.id WHERE wd.workspace_id=? AND wd.state='active' AND COALESCE(lb.removed_at,'')='' ORDER BY wd.id", raw)
+			docs, e := all(tx, "SELECT wd.id,wd.workspace_id,wd.document_id,d.format,COALESCE(lb.favorite,0) AS favorite,COALESCE(lb.finished_at,'') AS finished_at FROM workspace_documents wd JOIN documents d ON d.id=wd.document_id LEFT JOIN library_books lb ON lb.workspace_document_id=wd.id WHERE wd.workspace_id=? AND wd.state='active' AND COALESCE(lb.removed_at,'')='' ORDER BY wd.id", raw)
 			if e != nil {
 				return e
 			}
+			visible := []M{}
 			for _, m := range docs {
+				if !deviceDocument(d, m) {
+					continue
+				}
+				delete(m, "workspaceId")
+				visible = append(visible, m)
 				entry, e := one(tx, "SELECT e.id,e.relative_path,s.root,s.kind FROM source_entries e JOIN sources s ON s.id=e.source_id JOIN document_bindings b ON b.source_entry_id=e.id WHERE b.workspace_document_id=? AND e.state='active' AND s.state='active' AND b.state='active' ORDER BY e.relative_path LIMIT 1", m["id"])
 				versions, e2 := all(tx, "SELECT id,content_hash,size,created_at FROM versions WHERE document_id=? ORDER BY created_at DESC,id", m["documentId"])
 				if e2 != nil {
@@ -320,7 +324,7 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 					}
 				}
 			}
-			ws["documents"] = docs
+			ws["documents"] = visible
 			out = append(out, ws)
 		}
 		return nil
@@ -341,6 +345,9 @@ func (s *Server) syncCommand(w http.ResponseWriter, r *http.Request) error {
 		return e
 	}
 	d := deviceFrom(r)
+	if _, e := s.syncMember(s.db, d, str(b, "member")); e != nil {
+		return e
+	}
 	result, e := s.idem("device:"+str(d, "id"), str(b, "operationId"), b, func(tx *sql.Tx) (M, error) {
 		member := str(b, "member")
 		if _, e := s.syncMember(tx, d, member); e != nil {
