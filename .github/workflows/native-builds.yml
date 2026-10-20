@@ -45,6 +45,7 @@ jobs:
         with:
           name: Open-Reading-Android-debug
           path: release/mobile
+      - run: npm run build
       - run: go test ./internal/server -run 'TestLAN|TestORD|TestSync|TestCloud|TestMultiBrowser|TestM1SourcesIdentitySnapshots|TestWindowsFileIdentity' -count=1
       - run: npm run desktop:pack -- --${{ matrix.target }} --${{ matrix.arch }}
         env:
