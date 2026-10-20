@@ -973,7 +973,7 @@ test("M2 Markdown selection capture survives focus, annotation and refresh", asy
     .click();
   await page
     .getByLabel("评论输入")
-    .fill("M2：用唯一请求 ID 保证重试安全。普通 @小阅 不应调用模型。");
+    .fill("M2：用唯一请求 ID 保证重试安全。代码 `@小阅` 不应调用模型。");
   await page.getByLabel("发送评论").click();
   await expect(page.locator(".note-body")).toContainText("M2：用唯一请求 ID");
   await expect(page.locator(".annotation-mark").first()).toBeVisible();
@@ -3275,4 +3275,56 @@ test("Markdown restores its position after a delayed image without overriding a 
       await page.unroute(heldResource);
     }
   }
+});
+
+test("Typing or pasting @小阅 in a comment asks the assistant", async ({
+  page,
+}) => {
+  await openFile(page, "幂等性.md");
+  await selectText(
+    page.locator(".prose"),
+    "幂等性意味着重复执行同一操作，最终效果与执行一次相同。",
+  );
+  await page
+    .locator(".selection-toolbar")
+    .getByRole("button", { name: "评论", exact: true })
+    .click();
+  const input = page.getByLabel("评论输入");
+  await input.fill("代码 `@小阅` 只是笔记");
+  await expect(page.getByLabel("选择模型")).toHaveCount(0);
+  await input.fill("@");
+  await expect(page.getByLabel("选择模型")).toHaveCount(0);
+  await input.pressSequentially("小阅 解释一下幂等性");
+  await expect(page.getByLabel("选择模型")).toBeVisible();
+  await expect(page.getByLabel("发送评论")).toBeDisabled();
+  await page.getByLabel("选择模型").selectOption(provider.id);
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/threads") &&
+      response.request().method() === "POST",
+  );
+  await page.getByLabel("发送评论").click();
+  const response = await created;
+  expect(response.ok()).toBeTruthy();
+  const question = response.request().postDataJSON().message;
+  expect(question.recipient).toBe("assistant");
+  expect(question.body).toBe("@小阅 解释一下幂等性");
+  expect(question.contextPackage).toBeTruthy();
+  await expect(page.locator(".assistant-body")).toHaveCount(1);
+  await expect(page.locator(".run-status span")).toHaveText("已完成");
+  await expect(input).toHaveValue("");
+
+  await page.getByRole("button", { name: "记笔记", exact: true }).click();
+  await input.fill("再举一个例子 @ 小阅");
+  await expect(page.getByLabel("选择模型")).toBeVisible();
+  const replied = page.waitForResponse(
+    (response) =>
+      /\/api\/threads\/[^/]+\/messages$/.test(response.url()) &&
+      response.request().method() === "POST",
+  );
+  await page.getByLabel("发送评论").click();
+  const reply = await replied;
+  expect(reply.ok(), await reply.text()).toBeTruthy();
+  expect(reply.request().postDataJSON().message.recipient).toBe("assistant");
+  await expect(page.locator(".assistant-body")).toHaveCount(2);
 });

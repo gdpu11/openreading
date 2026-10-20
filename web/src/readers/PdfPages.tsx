@@ -8,7 +8,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import * as pdfjs from "pdfjs-dist";
+import * as pdfjs from "./pdf";
 import { tr } from "../i18n";
 import type { ZoomPoint } from "./pdfZoom";
 

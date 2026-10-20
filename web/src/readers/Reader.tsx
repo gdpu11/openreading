@@ -25,8 +25,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import * as pdfjs from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import * as pdfjs from "./pdf";
 import { openEpub, epubCSP } from "./epub";
 import { api, readContent, pdfSource, imageSource } from "../api";
 import {
@@ -50,7 +49,6 @@ import type {
 } from "./types";
 import "katex/dist/katex.min.css";
 import "pdfjs-dist/web/pdf_viewer.css";
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 const PARSERS = {
   markdown: "react-markdown-10-map-v1",
   txt: "txt-map-v1",

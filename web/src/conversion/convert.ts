@@ -1,10 +1,8 @@
 import JSZip from "jszip";
-import * as pdfjs from "pdfjs-dist";
-import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import * as pdfjs from "../readers/pdf";
 import { api, readContent } from "../api";
 import { openEpub } from "../readers/epub";
 import { tr } from "../i18n";
-pdfjs.GlobalWorkerOptions.workerSrc = worker;
 export type PdfEpubMode = "images" | "text";
 const escape = (s: string) =>
   s

@@ -83,6 +83,7 @@ import {
 import { ordPath, ordForm, ordResponse, saveORD } from "./ord";
 import { SyncSettings } from "./sync/SyncSettings";
 import { Capacitor } from "@capacitor/core";
+import { hasAssistantMention } from "./assistantMention";
 const defaults: ReaderPreferences = {
   language: getLanguage(),
   documentSort: "default",
@@ -182,6 +183,10 @@ function App() {
     composer = useRef<HTMLTextAreaElement>(null),
     toolbar = useRef<HTMLDivElement>(null),
     progressTimer = useRef<any>(null);
+  const assistantMention = hasAssistantMention(draft);
+  useEffect(() => {
+    if (assistantMention) setRecipient("assistant");
+  }, [assistantMention]);
   useEffect(() => desktop?.onThread(setNavigateThread), []);
   useEffect(() => {
     if (
@@ -2342,7 +2347,7 @@ function App() {
                         ? tr("正在恢复草稿…")
                         : recipient === "assistant"
                           ? tr("向小阅提问，回答将保存在这条线程…")
-                          : tr("写下自己的理解或问题…")
+                          : tr("写下自己的理解或问题，输入 @小阅 可提问…")
                     }
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

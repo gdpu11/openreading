@@ -25,9 +25,7 @@ async function renderCover(
   let cleanup: () => void = () => {};
   try {
     if (format === "pdf") {
-      const pdfjs = await import("pdfjs-dist");
-      const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+      const pdfjs = await import("../readers/pdf");
       const task = pdfjs.getDocument({
         url,
         disableAutoFetch: true,

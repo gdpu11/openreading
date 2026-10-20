@@ -1,8 +1,6 @@
 import ePub from "epubjs";
-import * as pdfjs from "pdfjs-dist";
-import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import * as pdfjs from "./pdf";
 import { projectQuad } from "./anchors";
-pdfjs.GlobalWorkerOptions.workerSrc = worker;
 (window as any).m0 = {
   async pdf() {
     const d = await pdfjs.getDocument({ url: "/fixtures/双栏与扫描混合.pdf" })
