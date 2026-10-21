@@ -284,7 +284,9 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       pdfPages.current?.goTo(index);
       setSelectionCleared();
     };
+    const selectionRequest = useRef(0);
     const setSelectionCleared = () => {
+      selectionRequest.current++;
       captured.current = null;
       capturedRange.current = null;
       latest.current.onSelect(null);
@@ -685,12 +687,33 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         };
         if (snapshot.toString() !== snap.quote.visible)
           throw Error("选区已变化，请重新选择");
+        // Capturing the artifact can outlive the native selection.
+        const current = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        if (
+          !current ||
+          selection!.isCollapsed ||
+          current.compareBoundaryPoints(Range.START_TO_START, snapshot) !== 0 ||
+          current.compareBoundaryPoints(Range.END_TO_END, snapshot) !== 0
+        )
+          return null;
         captured.current = result;
         capturedRange.current = snapshot;
         return result;
       },
       [doc.version.id, doc.workspaceDocumentId, page, manifest],
     );
+    const publishSelection = (range?: Range, element?: HTMLElement) => {
+      const request = ++selectionRequest.current;
+      void makeSelection(range, element)
+        .then((selection) => {
+          if (request === selectionRequest.current)
+            latest.current.onSelect(selection);
+        })
+        .catch((e) => {
+          if (request === selectionRequest.current)
+            latest.current.onError(e.message);
+        });
+    };
     const resolve = async (
       anchor: Anchor,
     ): Promise<{ state: string; range?: Range | null }> => {
@@ -1140,6 +1163,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               if (!selection?.rangeCount || selection.isCollapsed) {
                 candidate = "";
                 published = "";
+                if (captured.current) setSelectionCleared();
                 return;
               }
               const range = selection.getRangeAt(0);
@@ -1154,9 +1178,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
                 return;
               }
               published = cfi;
-              makeSelection(range.cloneRange(), c.document.body)
-                .then(latest.current.onSelect)
-                .catch((e) => latest.current.onError(e.message));
+              publishSelection(range.cloneRange(), c.document.body);
             }, 150);
             if (savedCFI && p.epubFlow !== "paginated") {
               const c = r.getContents()[0];
@@ -1236,6 +1258,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       })();
       return () => {
         disposed = true;
+        selectionRequest.current++;
         clearInterval(selectionPoll);
         abort.abort();
         if (gen === generation.current) textRoot.current = null;
@@ -1397,9 +1420,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
     }, [paint, doc.format]);
     const select = () => {
       if (doc.format === "epub") return;
-      makeSelection()
-        .then(props.onSelect)
-        .catch((e) => props.onError(e.message));
+      publishSelection();
     };
     const pageNote = async () => {
       const el = root() || host.current!;

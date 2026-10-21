@@ -1973,6 +1973,9 @@ function App() {
                         docRef.current?.version.id !== doc.version.id
                       )
                         return;
+                      // Native selection is cleared when entering the composer;
+                      // keep its captured quote until the draft is dismissed.
+                      if (!s && composing) return;
                       setSelection(s);
                       if (s) setComposing(false);
                     }}
@@ -2060,7 +2063,10 @@ function App() {
                         </button>
                         <button
                           title={tr("取消选区")}
-                          onClick={() => setSelection(null)}
+                          onClick={() => {
+                            reader.current?.clearNativeSelection();
+                            setSelection(null);
+                          }}
                         >
                           <X size={13} />
                         </button>

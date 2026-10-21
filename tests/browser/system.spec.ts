@@ -2059,6 +2059,89 @@ test("A07 EPUB toolbar stays beside the actual selection after scrolling and res
   );
   await expect(page.getByLabel("评论输入")).toBeEnabled();
 });
+test("EPUB selection toolbar closes with the native selection and can reopen", async ({
+  page,
+}) => {
+  await openFile(page, "可靠接口.epub");
+  const paragraph = page
+    .frameLocator(".epub-container iframe")
+    .locator("p")
+    .first();
+  const toolbar = page.locator(".selection-toolbar");
+  const quote = "幂等性意味着重复执行同一操作";
+  await selectText(paragraph, quote);
+  await expect(toolbar).toBeVisible();
+  // Clicking the text collapses the selection without changing the chapter.
+  await paragraph.click({ position: { x: 5, y: 5 } });
+  await expect(toolbar).toHaveCount(0);
+
+  await selectText(paragraph, quote);
+  await expect(toolbar).toBeVisible();
+  await paragraph.evaluate((el) => {
+    el.ownerDocument.defaultView!.getSelection()!.removeAllRanges();
+  });
+  await expect(toolbar).toHaveCount(0);
+
+  await selectText(paragraph, quote);
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByTitle("取消选区", { exact: true }).click();
+  await expect(toolbar).toHaveCount(0);
+  await expect
+    .poll(() =>
+      paragraph.evaluate((el) =>
+        el.ownerDocument.defaultView!.getSelection()!.toString(),
+      ),
+    )
+    .toBe("");
+
+  await selectText(paragraph, quote);
+  await toolbar.getByRole("button", { name: "问小阅", exact: true }).click();
+  await expect(page.locator(".composer blockquote")).toContainText(quote);
+  await expect(toolbar).toHaveCount(0);
+  // The next selection poll must preserve the composer's captured quote.
+  await page.waitForTimeout(350);
+  await expect(page.locator(".composer blockquote")).toContainText(quote);
+  await expect(page.getByLabel("评论输入")).toBeEnabled();
+});
+test("A delayed EPUB selection capture cannot dismiss a newer selection", async ({
+  page,
+}) => {
+  await openFile(page, "可靠接口.epub");
+  const paragraph = page
+    .frameLocator(".epub-container iframe")
+    .locator("p")
+    .first();
+  const toolbar = page.locator(".selection-toolbar");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  await page.route("**/api/artifacts", async (route) => {
+    if (!held) {
+      held = true;
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    const pending = page.waitForRequest("**/api/artifacts");
+    await selectText(paragraph, "幂等性意味着重复执行同一操作");
+    const request = await pending;
+    const quote = "重复执行同一操作";
+    await selectText(paragraph, quote);
+    await expect(toolbar).toBeVisible();
+    const response = page.waitForResponse((r) => r.request() === request);
+    release();
+    await (await response).finished();
+    await toolbar.getByRole("button", { name: "评论", exact: true }).click();
+    await expect(page.locator(".composer blockquote")).toHaveText(quote);
+    await expect(page.getByLabel("评论输入")).toBeEnabled();
+  } finally {
+    release();
+    await page.unroute("**/api/artifacts");
+  }
+});
 test("A07 SVG EPUB cover preserves aspect ratio across sidebar and window changes", async ({
   page,
 }) => {
