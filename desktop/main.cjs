@@ -27,7 +27,6 @@ const managedWindows = new Set();
 const closeWaiters = new Map();
 let libraryURL;
 let quitting = false;
-let systemReadingActive = true;
 let stopPromise = Promise.resolve();
 let settings = { mode: "local", language: "en" };
 const settingsFile = () => join(app.getPath("userData"), "desktop.json");
@@ -350,10 +349,15 @@ function trusted(event) {
   );
 }
 function readingSystemState() {
+  // A resume notification can precede screen unlock, and its matching unlock
+  // notification may be missed. Re-sample instead of latching that state.
+  publishReadingSystemState(powerMonitor.getSystemIdleState(120) !== "locked");
+}
+function publishReadingSystemState(systemActive) {
   for (const window of managedWindows) {
     if (window.webContents.isDestroyed()) continue;
     const active =
-      systemReadingActive &&
+      systemActive &&
       window.isFocused() &&
       !window.isMinimized() &&
       window.isVisible();
@@ -527,17 +531,10 @@ if (!app.requestSingleInstanceLock()) {
     }
     if (!app.isPackaged && process.env.OR_DESKTOP_SMOKE)
       settings.dataDir = process.env.OR_DESKTOP_DATA;
-    systemReadingActive = powerMonitor.getSystemIdleState(120) !== "locked";
     for (const name of ["lock-screen", "suspend"])
-      powerMonitor.on(name, () => {
-        systemReadingActive = false;
-        readingSystemState();
-      });
+      powerMonitor.on(name, () => publishReadingSystemState(false));
     for (const name of ["unlock-screen", "resume"])
-      powerMonitor.on(name, () => {
-        systemReadingActive = powerMonitor.getSystemIdleState(120) !== "locked";
-        readingSystemState();
-      });
+      powerMonitor.on(name, readingSystemState);
     // Native activation events can report a transitional focus/visibility state.
     // Reconcile after it settles, even when no further window event arrives.
     const readingStateTimer = setInterval(readingSystemState, 1000);

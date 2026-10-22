@@ -2,9 +2,10 @@ import { test, expect, _electron as electron } from "@playwright/test";
 import { mkdtemp, mkdir, copyFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 
 test.use({ trace: "off", screenshot: "off" });
-test("Native reading timer recovers from a stale activation sample and excludes background time", async () => {
+test("Native reading timer recovers after missed unlock and stale activation without counting suspended time", async () => {
   test.skip(process.platform !== "darwin");
   test.setTimeout(60000);
   const dir = await mkdtemp(join(tmpdir(), "openreading-reading-focus-"));
@@ -26,6 +27,19 @@ test("Native reading timer recovers from a stale activation sample and excludes 
     });
     const library = await app.firstWindow();
     await library.waitForURL(/127.0.0.1/);
+    // Register/activate the CLI-launched app once. Repeating this for each
+    // window switch can deliver a late activation that steals focus back.
+    execFileSync("open", [
+      "-a",
+      resolve("node_modules/electron/dist/Electron.app"),
+    ]);
+    await expect
+      .poll(() =>
+        app!.evaluate(
+          ({ BrowserWindow }) => !!BrowserWindow.getFocusedWindow(),
+        ),
+      )
+      .toBe(true);
     await library.evaluate(async (sourcePath) => {
       const me = await (await fetch("/api/me")).json();
       const post = async (path: string, body: unknown, method = "POST") => {
@@ -55,6 +69,15 @@ test("Native reading timer recovers from a stale activation sample and excludes 
       throw Error("Scan timed out");
     }, material);
     await library.reload();
+    // A resume sample can still report the lock screen. The subsequent
+    // unlock notification may be missed during a long-running app session.
+    await app.evaluate(({ powerMonitor }) => {
+      (powerMonitor as any).testOriginalIdleState =
+        powerMonitor.getSystemIdleState;
+      (powerMonitor as any).getSystemIdleState = () => "locked";
+      powerMonitor.emit("suspend");
+      powerMonitor.emit("resume");
+    });
     const opened = app.waitForEvent("window");
     await library.locator(".library-book").click();
     const book = await opened;
@@ -64,22 +87,45 @@ test("Native reading timer recovers from a stale activation sample and excludes 
       book.frameLocator(".epub-container iframe").locator("body"),
     ).toContainText("接口重试");
     await book.clock.pauseAt(await book.evaluate(() => Date.now() + 1000));
-    const focus = async (reader: boolean) =>
-      app!.evaluate(({ app, BrowserWindow }, reader) => {
+    const focus = async (reader: boolean) => {
+      await app!.evaluate(({ app, BrowserWindow }, reader) => {
         const window = BrowserWindow.getAllWindows().find(
           (w) => !!(w as any).readerTarget === reader,
         )!;
+        app.focus({ steal: true });
         window.show();
         window.focus();
-        app.focus({ steal: true });
       }, reader);
+      await expect
+        .poll(() =>
+          app!.evaluate(({ BrowserWindow }, reader) => {
+            const focused = BrowserWindow.getFocusedWindow();
+            return !!focused && !!(focused as any).readerTarget === reader;
+          }, reader),
+        )
+        .toBe(true);
+    };
     const timer = book.locator(".session-timer");
     const seconds = async () =>
       (await timer.locator("output").textContent())!
         .split(":")
         .reduce((sum, part) => sum * 60 + Number(part), 0);
+    await expect(timer).toHaveAttribute("data-state", "paused");
+    await book.clock.fastForward(24 * 60 * 60 * 1000);
+    expect(await seconds()).toBe(0);
+    await app.evaluate(({ powerMonitor }) => {
+      (powerMonitor as any).getSystemIdleState = () => "active";
+    });
     await focus(true);
-    await expect(timer).toHaveAttribute("data-state", "running");
+    await expect(timer).toHaveAttribute("data-state", "running", {
+      timeout: 3500,
+    });
+    await app.evaluate(({ powerMonitor }) => {
+      (powerMonitor as any).getSystemIdleState = (
+        powerMonitor as any
+      ).testOriginalIdleState;
+      delete (powerMonitor as any).testOriginalIdleState;
+    });
     await book.clock.runFor(5000);
     const started = await seconds();
     expect(started).toBeGreaterThanOrEqual(4);
