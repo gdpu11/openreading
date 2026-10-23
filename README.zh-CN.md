@@ -6,7 +6,7 @@ Open Reading 是以本地为主的阅读与笔记工具，支持 **EPUB、PDF、
 
 **MIT 开源 · 预览版 · 中英文界面**
 
-[English](README.md) · [下载安装](https://github.com/gdpu11/openreading/releases) · [已知限制](docs/known-limitations.md)
+[English](README.md) · [下载安装](https://github.com/gdpu11/openreading/releases) · [已知限制](docs/known-limitations.md) · [隐私说明](PRIVACY.md)
 
 ![Open Reading 书库](docs/images/library.png)
 
@@ -19,6 +19,7 @@ Open Reading 是以本地为主的阅读与笔记工具，支持 **EPUB、PDF、
 - **标注与学习笔记**：划线、评论、笔记复习，使用 `.ord` 导出原书与已保存标注，供别人独立导入。
 - **局域网同步**：电脑确认设备授权后，Android 手机同步指定工作区；支持离线缓存、笔记回传和冲突草稿保留。
 - **阅读数据**：前台阅读计时、全局阅读日历、连续阅读天数、全书字数和可调整速度的预计阅读时间。
+- **检索与复习**：整本书搜索、已建立索引的书库全文搜索；笔记和 AI 讨论搜索、标签、到期复习队列、命名书签、带来源链接的 Markdown 导出。手机使用书架、笔记、设置三栏导航，配对和同步集中在设置中。详见[阅读改进](docs/reading-improvements.md)。
 - **书库管理**：封面、搜索、排序、格式筛选、收藏、已读标记；删除时区分移出当前书库和删除原始文件。
 
 ## 体验划线提问
@@ -46,8 +47,10 @@ macOS / Windows 使用 Electron；Android 使用 Capacitor。iOS 提供源码和
 
 ## 隐私与限制
 
-书籍与笔记默认保存在本机，开启局域网同步后才向配对设备提供授权内容。模型接口是可选功能，所选上下文会发送到你配置的服务商；密钥仅保存在服务进程内存，不进入备份。
+书籍与笔记默认保存在本机，开启局域网同步后才向配对设备提供授权内容。模型接口是可选功能，所选上下文会发送到你配置的服务商；密钥默认仅保存在服务进程内存；桌面端可选择系统保护的加密存储，密钥不进入书库备份。
 
-扫描 PDF 不做 OCR；文字重排可能丢失复杂版式和插图。删除原始文件是永久操作；仅移出书库可以恢复。更多边界见 [已知限制](docs/known-limitations.md)。
+桌面端可识别单页扫描 PDF 的文字，结果独立保存，不改写原 PDF；文字重排可能丢失复杂版式和插图。删除原始文件是永久操作；仅移出书库可以恢复。更多边界见 [已知限制](docs/known-limitations.md)。
 
 公开仓库只包含自有生成的示例书籍，不包含个人书库、部署记录、密钥或本机测试截图。源码使用 [MIT 许可证](LICENSE)，依赖遵循各自许可证。
+
+安卓扫码依赖包含 Google ML Kit，存在独立条款和指标发送说明；不能把“本地优先”理解为所有 SDK 绝不联网。详见 [合规复核与未闭环事项](docs/compliance-review.md) 和 [素材来源记录](docs/asset-provenance.md)。修正后重新构建的客户端包含 `/licenses/index.html` 离线许可页；旧发布包不会随源码修改自动更新。

@@ -26,7 +26,7 @@ export async function saveORD(blob: Blob, title: string) {
 export async function saveExport(
   blob: Blob,
   title: string,
-  extension: "ord" | "csv",
+  extension: "ord" | "csv" | "md" | "txt",
 ) {
   let basename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, "-");
   while (new TextEncoder().encode(basename).length > 180)
@@ -48,9 +48,17 @@ export async function saveExport(
     });
     await Share.share({
       title:
-        extension === "ord" ? "Open Reading 学习包" : "Open Reading 阅读数据",
+        extension === "ord"
+          ? "Open Reading 学习包"
+          : extension === "csv"
+            ? "Open Reading 阅读数据"
+            : "Open Reading 笔记",
       dialogTitle:
-        extension === "ord" ? "保存或分享 ORD 学习包" : "保存或分享阅读数据",
+        extension === "ord"
+          ? "保存或分享 ORD 学习包"
+          : extension === "csv"
+            ? "保存或分享阅读数据"
+            : "保存或分享笔记",
       files: [file.uri],
     });
   } else {

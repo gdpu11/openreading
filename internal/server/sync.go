@@ -312,6 +312,19 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 					return err
 				}
 				m["threads"] = threads
+				m["recognizedPages"], err = all(tx, "SELECT rp.* FROM recognized_pages rp JOIN versions v ON v.id=rp.version_id WHERE v.document_id=?", m["documentId"])
+				if err != nil {
+					return err
+				}
+				m["bookmarks"], err = all(tx, "SELECT * FROM bookmarks WHERE workspace_document_id=? ORDER BY created_at", m["id"])
+				if err != nil {
+					return err
+				}
+				prefs, err := one(tx, "SELECT data_json FROM book_preferences WHERE id=?", m["id"])
+				if err != nil && !isNotFound(err) {
+					return err
+				}
+				m["preferences"] = obj(prefs, "data")
 				manifests, err := all(tx, "SELECT m.id,m.version_id,m.resources_json FROM manifests m JOIN document_bindings b ON b.source_entry_id=m.source_entry_id WHERE b.workspace_document_id=? ORDER BY m.created_at", m["id"])
 				if err != nil {
 					return err
@@ -354,6 +367,13 @@ func (s *Server) syncCommand(w http.ResponseWriter, r *http.Request) error {
 			return nil, e
 		}
 		switch str(b, "type") {
+		case "learning":
+			return s.saveLearning(tx, member, str(b, "threadId"), b)
+		case "bookmark":
+			return s.addBookmark(tx, member, b)
+		case "delete-bookmark":
+			err := exec(tx, "DELETE FROM bookmarks WHERE id=? AND workspace_document_id=?", b["bookmarkId"], member)
+			return M{"ok": true}, err
 		case "create":
 			anchor := obj(b, "anchor")
 			a := obj(b, "artifact")

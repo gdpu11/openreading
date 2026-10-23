@@ -214,6 +214,62 @@ export function mobileReader(s: () => MobileState) {
   const artifacts = new Map<string, any>();
   setReaderTransport({
     async api(path, method, body: any) {
+      if(path.includes("/recognized-pages")&&method==="GET"){const url=new URL("https://local.invalid"+path),member=path.split("/")[2],doc=allDocuments(s()).find((d:any)=>d.id===member);return (doc?.recognizedPages||[]).filter((p:any)=>p.versionId===url.searchParams.get("version"));}
+      const match =
+        /^\/documents\/([^/]+)\/(bookmarks|preferences)(?:\/([^/]+))?$/.exec(
+          path,
+        );
+      if (match) {
+        const doc = s()
+          .library?.workspaces.flatMap((w: any) => w.documents)
+          .find((d: any) => d.id === match[1]);
+        if (!doc) throw Error("此书不在手机书库中");
+        if (match[2] === "preferences") {
+          if (method === "GET")
+            return { data: doc.preferences || {}, revision: 0 };
+          throw Error("手机阅读设置保存在本机");
+        }
+        if (method === "GET") return doc.bookmarks || [];
+        if (method === "POST") {
+          const operationId = crypto.randomUUID(),
+            mark = {
+              id: operationId,
+              workspaceDocumentId: doc.id,
+              ...body,
+              createdAt: new Date().toISOString(),
+            };
+          (doc.bookmarks ||= []).push(mark);
+          s().outbox.push({
+            type: "bookmark",
+            operationId,
+            member: doc.id,
+            ...body,
+          });
+          await persistState(s());
+          return mark;
+        }
+        if (method === "DELETE") {
+          const pending = s().outbox.find(
+            (op: any) => op.type === "bookmark" && op.operationId === match[3],
+          );
+          if (pending)
+            s().outbox = s().outbox.filter(
+              (op: any) => op.operationId !== pending.operationId,
+            );
+          else
+            s().outbox.push({
+              type: "delete-bookmark",
+              operationId: crypto.randomUUID(),
+              member: doc.id,
+              bookmarkId: match[3],
+            });
+          doc.bookmarks = (doc.bookmarks || []).filter(
+            (mark: any) => mark.id !== match[3],
+          );
+          await persistState(s());
+          return { ok: true };
+        }
+      }
       if (path === "/artifacts" && method === "POST") {
         const id = await hash(
           new TextEncoder().encode(JSON.stringify(body)).buffer,

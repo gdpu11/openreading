@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "library_books"}
+var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "library_books", "note_learning", "book_preferences", "bookmarks", "recognized_pages"}
 
 type backupManifest struct {
 	SchemaVersion     int               `json:"schemaVersion"`
@@ -94,14 +94,14 @@ func rawQuery(q querier, query string, args ...any) ([]M, error) {
 }
 func (s *Server) protected(q querier) (map[string]bool, error) {
 	hashes := map[string]bool{}
-	versions, e := all(q, "SELECT DISTINCT content_hash FROM versions WHERE id IN (SELECT original_version_id FROM annotations UNION SELECT version_id FROM contexts UNION SELECT target_version_id FROM resolutions UNION SELECT version_id FROM leases WHERE expires_at>? UNION SELECT v.id FROM versions v JOIN source_entries e ON e.document_id=v.document_id JOIN sources s ON s.id=e.source_id WHERE s.kind='imported_collection')", time.Now().Unix())
+	versions, e := all(q, "SELECT DISTINCT content_hash FROM versions WHERE id IN (SELECT original_version_id FROM annotations UNION SELECT json_extract(j.value,'$.documentVersionId') FROM contexts c,json_each(c.sources_json) j UNION SELECT version_id FROM recognized_pages UNION SELECT version_id FROM bookmarks UNION SELECT version_id FROM contexts UNION SELECT target_version_id FROM resolutions UNION SELECT version_id FROM leases WHERE expires_at>? UNION SELECT v.id FROM versions v JOIN source_entries e ON e.document_id=v.document_id JOIN sources s ON s.id=e.source_id WHERE s.kind='imported_collection')", time.Now().Unix())
 	if e != nil {
 		return nil, e
 	}
 	for _, v := range versions {
 		hashes[str(v, "contentHash")] = true
 	}
-	manifests, e := all(q, "SELECT resources_json FROM manifests WHERE id IN(SELECT manifest_id FROM annotations WHERE manifest_id IS NOT NULL UNION SELECT manifest_id FROM contexts WHERE manifest_id IS NOT NULL UNION SELECT json_extract(selector_json,'$.anchor.resourceManifestId') FROM resolutions WHERE method='manual') OR version_id IN (SELECT version_id FROM leases WHERE expires_at>?)", time.Now().Unix())
+	manifests, e := all(q, "SELECT resources_json FROM manifests WHERE id IN(SELECT manifest_id FROM annotations WHERE manifest_id IS NOT NULL UNION SELECT manifest_id FROM contexts WHERE manifest_id IS NOT NULL UNION SELECT json_extract(j.value,'$.resourceManifestId') FROM contexts c,json_each(c.sources_json) j UNION SELECT json_extract(selector_json,'$.anchor.resourceManifestId') FROM resolutions WHERE method='manual') OR version_id IN (SELECT version_id FROM bookmarks UNION SELECT version_id FROM leases WHERE expires_at>?)", time.Now().Unix())
 	if e != nil {
 		return nil, e
 	}
@@ -661,7 +661,7 @@ func (s *Server) dataRoutes() {
 	})
 	s.route("GET /api/backups/{b}/download", func(w http.ResponseWriter, r *http.Request) error {
 		backupID := r.PathValue("b")
-		if len(backupID) != 32 || strings.ContainsAny(backupID, "./\\") {
+		if (len(backupID) != 32 && !(len(backupID) == 37 && strings.HasPrefix(backupID, "auto-"))) || strings.ContainsAny(backupID, "./\\") {
 			return problem(400, "INVALID_ID", "备份编号无效", false)
 		}
 		f, e := os.Open(filepath.Join(s.cfg.DataDir, "backups", backupID+".zip"))

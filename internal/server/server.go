@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-//go:embed migrations/*.sql static/*
+//go:embed migrations/*.sql all:static
 var assets embed.FS
 
 type Config struct {
@@ -124,7 +124,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(8)
-	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql", "005.sql"} {
+	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql", "005.sql", "006.sql"} {
 		schema, err := assets.ReadFile("migrations/" + migration)
 		if err == nil {
 			_, err = db.Exec(string(schema))
@@ -314,7 +314,7 @@ func decode(r *http.Request, v any) error {
 func body(r *http.Request) (M, error) { m := M{}; e := decode(r, &m); return m, e }
 func (s *Server) routes() {
 	s.route("GET /api/health", func(w http.ResponseWriter, r *http.Request) error {
-		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 5, "serverMode": s.cfg.PublicOrigin != ""})
+		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 6, "serverMode": s.cfg.PublicOrigin != ""})
 	})
 	s.route("POST /api/session", func(w http.ResponseWriter, r *http.Request) error {
 		b, e := body(r)
@@ -357,6 +357,10 @@ func (s *Server) routes() {
 	s.dataRoutes()
 	s.ordRoutes()
 	s.readingRoutes()
+	s.learningRoutes()
+	s.searchRoutes()
+	s.articleRoutes()
+	s.backupPolicyRoutes()
 	public, _ := fs.Sub(assets, "static")
 	fileServer := http.FileServer(http.FS(public))
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -378,12 +382,16 @@ func (s *Server) background() {
 	}
 	scan := time.NewTicker(s.cfg.ScanInterval)
 	queue := time.NewTicker(300 * time.Millisecond)
+	backups := time.NewTicker(time.Minute)
+	defer backups.Stop()
 	defer scan.Stop()
 	defer queue.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
+		case <-backups.C:
+			s.automaticBackup()
 		case <-queue.C:
 			s.dispatch()
 		case <-scan.C:

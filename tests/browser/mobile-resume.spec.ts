@@ -12,7 +12,7 @@ test("phone restarts with completed files cached and a partial file resumed at i
   test.setTimeout(60000);
   const dir = await mkdtemp(join(tmpdir(), "openreading-resume-"));
   const service = spawn(
-    resolve("desktop/runtime/openreading"),
+    resolve(process.env.OR_TEST_BINARY || "desktop/runtime/openreading"),
     ["--port", "0", "--data-dir", dir, "--machine-readable"],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -113,6 +113,7 @@ test("phone restarts with completed files cached and a partial file resumed at i
       localStorage.setItem("open-reading-language", "zh"),
     );
     await phone.goto(base + "/mobile");
+    await phone.getByRole("button", { name: "设置", exact: true }).click();
     await expect(
       phone.getByRole("button", { name: "扫描电脑二维码", exact: true }),
     ).toBeVisible();
@@ -139,7 +140,10 @@ test("phone restarts with completed files cached and a partial file resumed at i
       db.close();
     }, base);
     await phone.reload();
-    await expect(phone.locator(".mobile-status")).toContainText("进度已保存");
+    await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await expect(phone.locator(".mobile-sync-status")).toContainText(
+      "进度已保存",
+    );
     expect(ranges[0]).toHaveLength(1);
     expect(ranges[1]).toEqual([
       `bytes=0-${chunkSize - 1}`,
@@ -153,11 +157,12 @@ test("phone restarts with completed files cached and a partial file resumed at i
       localStorage.setItem("open-reading-language", "zh"),
     );
     await phone.goto(base + "/mobile");
-    await expect(phone.locator(".mobile-status")).toContainText(
+    await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await expect(phone.locator(".mobile-sync-status")).toContainText(
       "已同步 1/2 个文件",
     );
     release();
-    await expect(phone.locator(".mobile-status")).toHaveText(
+    await expect(phone.locator(".mobile-sync-status")).toContainText(
       "文件与笔记已同步",
     );
     expect(ranges[0]).toHaveLength(1);
@@ -185,6 +190,8 @@ test("phone restarts with completed files cached and a partial file resumed at i
     expect(saved).toEqual({ size: files[1].length, first: "xxx" });
     finished = true;
     await phone.reload();
+    await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button", { name: "书架", exact: true }).click();
     await expect(
       phone.getByRole("button", { name: /需要续传.txt/ }),
     ).toBeVisible();

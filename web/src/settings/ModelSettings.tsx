@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowLeft, Plus, Server, Check, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import "./models.css";
+import { credentialTarget } from "./credentials";
 
 export function modelsFor(p: any): string[] {
   return p.models ?? p.config?.models ?? (p.modelId ? [p.modelId] : []);
@@ -46,6 +47,7 @@ export function ModelSettings({
   const [view, setView] = useState<"list" | "platforms" | "edit">("list");
   const [form, setForm] = useState<any>(defaults);
   const [key, setKey] = useState("");
+  const [rememberKey, setRememberKey] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState<string[]>([]);
   const [manual, setManual] = useState("");
@@ -74,6 +76,12 @@ export function ModelSettings({
     setForm({ ...defaults, ...p.config, ...p, models });
     setAvailable(models);
     setKey("");
+    setRememberKey(false);
+    if (p.id)
+      void window.openReadingDesktop
+        ?.credential("load", { id: p.id, target: credentialTarget(p) })
+        .then((value) => setRememberKey(!!value))
+        .catch((e) => setError(e.message));
     setManual("");
     setFilter("");
     setError("");
@@ -114,6 +122,19 @@ export function ModelSettings({
       );
       // Keep the new revision if workspace enablement fails, so retry edits this provider.
       setForm((p: any) => ({ ...p, ...saved }));
+      if (window.openReadingDesktop?.credential) {
+        if (rememberKey && key)
+          await window.openReadingDesktop.credential("save", {
+            id: saved.id,
+            target: credentialTarget(form),
+            key,
+          });
+        else if (!rememberKey)
+          await window.openReadingDesktop.credential("forget", {
+            id: saved.id,
+            target: credentialTarget(form),
+          });
+      }
       setKey("");
       if (workspace)
         await api(
@@ -202,6 +223,10 @@ export function ModelSettings({
                           await api(`/providers/${p.id}`, "DELETE", {
                             revision: p.revision,
                           });
+                          await window.openReadingDesktop?.credential(
+                            "forget",
+                            { id: p.id, target: credentialTarget(p) },
+                          );
                           await reloadProviders();
                           onNotice("提供方已删除，历史问答已保留");
                         });
@@ -238,7 +263,7 @@ export function ModelSettings({
           </div>
           <p className="provider-privacy muted">
             {tr(
-              "密钥仅保存在本次本机服务进程的内存中，重启后需重新绑定。小阅只发送你预览的原文与历史；每个工作区分别启用提供方。",
+              "密钥默认只在服务进程内存中；桌面端可选择系统保护的密钥存储。小阅只发送你预览的原文与历史；每个工作区分别启用提供方。",
             )}
           </p>
         </>
@@ -315,6 +340,19 @@ export function ModelSettings({
                   }
                 />
               </label>
+              {window.openReadingDesktop?.credential && (
+                <label className="full">
+                  <input
+                    type="checkbox"
+                    checked={rememberKey}
+                    onChange={(e) => setRememberKey(e.target.checked)}
+                  />
+                  {tr("使用系统密钥存储记住 API Key")}
+                  <small>
+                    {tr("仅保存在本机系统保护的存储中，不进入书库备份。")}
+                  </small>
+                </label>
+              )}
               <label className="full">
                 {tr("API 地址（Base URL）")}
                 <input
@@ -572,6 +610,10 @@ export function ModelSettings({
                   onClick={() =>
                     run(async () => {
                       await api(`/providers/${form.id}/credential`, "DELETE");
+                      await window.openReadingDesktop?.credential("forget", {
+                        id: form.id,
+                        target: credentialTarget(form),
+                      });
                       set({ credentialBound: false });
                       await reloadProviders();
                       onNotice("会话密钥已删除");

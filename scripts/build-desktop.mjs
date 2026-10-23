@@ -37,3 +37,7 @@ execFileSync(
   ],
   { env, stdio: "inherit" },
 );
+
+if (goos === "darwin" && process.platform === "darwin") {
+  execFileSync("xcrun", ["swiftc", "-O", "-target", `${goarch === "amd64" ? "x86_64" : "arm64"}-apple-macosx12.0`, "desktop/ocr.swift", "-o", "desktop/runtime/openreading-ocr"], {stdio:"inherit"});
+}

@@ -400,5 +400,16 @@ export async function openEpub(raw: ArrayBuffer) {
     );
     return `<!doctype html><html><head><meta charset="utf-8"><title>${safeTitle}</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"><style>@page{size:A4;margin:16mm}body{font:12pt/1.75 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;color:#111;background:#fff}.print-chapter{break-before:page;overflow-wrap:anywhere}.print-chapter:first-child{break-before:auto}img,svg{max-width:100%;max-height:250mm;object-fit:contain}table{max-width:100%;border-collapse:collapse}pre{white-space:pre-wrap}h1,h2,h3{break-after:avoid}</style></head><body>${html}</body></html>`;
   };
-  return { book, dispose, wordCount, indexLocations, printHTML };
+  const textSections = async (signal: AbortSignal, progress: (text: string) => void) => {
+    const sections = book.spine.spineItems.filter((s: any) => s.linear);
+    const results = [];
+    for (let i = 0; i < sections.length; i++) {
+      await yieldWordCount(signal); progress(`${i + 1} / ${sections.length}`);
+      const chapter = await request(sections[i].url);
+      const body = chapter.querySelector("body");
+      results.push({position:i,label:body?.querySelector("h1,h2,h3")?.textContent || `${i + 1}`,locator:{href:sections[i].href},text:body ? bodyText(body) : ""});
+    }
+    return results;
+  };
+  return { book, dispose, wordCount, indexLocations, printHTML, textSections };
 }

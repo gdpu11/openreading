@@ -5,6 +5,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import struct
 
 root = pathlib.Path(__file__).resolve().parent.parent
 out = root / "third-party"
@@ -22,8 +23,45 @@ def collect(name, version, folder, ecosystem):
             dest.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(p, dest / p.name)
             files.append(str((dest / p.name).relative_to(root)))
-    for p in dest.glob("LICENSE.upstream"):
+    for p in dest.glob("LICENSE*.upstream"):
         files.append(str(p.relative_to(root)))
+    if ecosystem == "npm" and name == "katex":
+        records = []
+        for font in sorted((folder / "dist/fonts").glob("*.ttf")):
+            data = font.read_bytes()
+            for i in range(struct.unpack_from(">H", data, 4)[0]):
+                tag, _, offset, _ = struct.unpack_from(">4sIII", data, 12 + i * 16)
+                if tag != b"name":
+                    continue
+                _, count, strings = struct.unpack_from(">HHH", data, offset)
+                notices = set()
+                for j in range(count):
+                    platform, _, _, name_id, size, location = struct.unpack_from(">HHHHHH", data, offset + 6 + j * 12)
+                    if name_id not in {0, 13, 14}:
+                        continue
+                    raw = data[offset + strings + location:offset + strings + location + size]
+                    notices.add(raw.decode("utf-16be" if platform in {0, 3} else "mac_roman"))
+                if not notices:
+                    raise SystemExit("No embedded font notice: " + str(font))
+                records.append(font.name + "\n" + "\n\n".join(sorted(notices)))
+        if not records:
+            raise SystemExit("KaTeX font inventory is empty")
+        target = dest / "FONT-NOTICE.txt"
+        target.write_text("Exact copyright/license strings extracted from the shipped TTF name tables.\n\n" + "\n\n---\n\n".join(records) + "\n")
+        files.append(str(target.relative_to(root)))
+    if ecosystem == "npm" and name == "pako":
+        source = folder / "lib/zlib/README"
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest / "ZLIB-NOTICE.txt")
+        files.append(str((dest / "ZLIB-NOTICE.txt").relative_to(root)))
+    if ecosystem == "npm" and name == "pdfjs-dist":
+        for subdir in ["cmaps", "standard_fonts", "wasm", "iccs"]:
+            for p in (folder / subdir).iterdir():
+                if p.is_file() and re.match(r"^(license|notice|copying)", p.name, re.I):
+                    target = dest / subdir / p.name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(p, target)
+                    files.append(str(target.relative_to(root)))
     if not files:
         missing.append(name)
         dest.mkdir(parents=True, exist_ok=True)

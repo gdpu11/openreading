@@ -119,7 +119,7 @@ func validStyle(m M) M {
 	return M{"color": color, "underline": underline}
 }
 func (s *Server) threadData(q querier, where string, args ...any) ([]M, error) {
-	threads, e := all(q, "SELECT a.*,t.id AS thread_id,t.learning_state,t.revision AS thread_revision FROM annotations a JOIN threads t ON t.annotation_id=a.id "+where+" ORDER BY a.created_at", args...)
+	threads, e := all(q, "SELECT a.*,t.id AS thread_id,t.learning_state,t.revision AS thread_revision,COALESCE(n.tags_json,'[]') AS tags_json,COALESCE(n.due_at,'') AS due_at,COALESCE(n.interval_days,0) AS interval_days,COALESCE(n.revision,0) AS learning_revision FROM annotations a JOIN threads t ON t.annotation_id=a.id LEFT JOIN note_learning n ON n.id=t.id "+where+" ORDER BY a.created_at", args...)
 	if e != nil {
 		return nil, e
 	}

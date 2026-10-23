@@ -7,6 +7,7 @@ const {
   session,
   powerMonitor,
   ipcMain,
+  safeStorage,
   screen,
 } = require("electron");
 const { spawn } = require("node:child_process");
@@ -26,6 +27,48 @@ const readers = new Map();
 const managedWindows = new Set();
 const closeWaiters = new Map();
 let libraryURL;
+let pendingReadingLink;
+function parseReadingLink(value) {
+  try {
+    const u = new URL(value);
+    if (
+      u.protocol !== "openreading:" ||
+      u.hostname !== "read" ||
+      u.username ||
+      u.password
+    )
+      return null;
+    const target = {
+      workspaceId: u.searchParams.get("workspace"),
+      memberId: u.searchParams.get("book"),
+      threadId: u.searchParams.get("thread") || undefined,
+    };
+    if (
+      ![
+        target.workspaceId,
+        target.memberId,
+        ...(target.threadId ? [target.threadId] : []),
+      ].every((v) => typeof v === "string" && /^[a-f0-9]{32}$/.test(v))
+    )
+      return null;
+    return target;
+  } catch {
+    return null;
+  }
+}
+async function followReadingLink(value) {
+  const target = parseReadingLink(value);
+  if (!target) return;
+  if (!libraryURL) {
+    pendingReadingLink = value;
+    return;
+  }
+  await openBookTarget(target);
+}
+app.on("open-url", (event, value) => {
+  event.preventDefault();
+  void followReadingLink(value).catch(() => showLibrary());
+});
 let quitting = false;
 let stopPromise = Promise.resolve();
 let settings = { mode: "local", language: "en" };
@@ -404,6 +447,43 @@ async function closeWindow(window) {
   })();
   return window.closing;
 }
+async function openBookTarget(target) {
+  if (
+    opening ||
+    quitting ||
+    !libraryURL ||
+    !target ||
+    ![target.workspaceId, target.memberId].every(
+      (v) => typeof v === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(v),
+    )
+  )
+    throw Error("Invalid reading window request");
+  const existing = readers.get(target.memberId);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    if (typeof target.threadId === "string")
+      existing.webContents.send("open-reading:thread", target.threadId);
+    return;
+  }
+  const window = createWindow({
+    workspaceId: target.workspaceId,
+    memberId: target.memberId,
+    threadId:
+      typeof target.threadId === "string" &&
+      /^[a-zA-Z0-9_-]{1,100}$/.test(target.threadId)
+        ? target.threadId
+        : undefined,
+  });
+  readers.set(target.memberId, window);
+  try {
+    await window.loadURL(libraryURL);
+  } catch (error) {
+    // Reloading or closing a loading book cancels the initial navigation.
+    if (!window.isDestroyed() && error.code !== "ERR_ABORTED") throw error;
+  }
+}
 function createWindow(target) {
   const library = target && win && !win.isDestroyed() ? win.getBounds() : null;
   const area = library ? screen.getDisplayMatching(library).workArea : null;
@@ -507,7 +587,11 @@ function createWindow(target) {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", showLibrary);
+  app.on("second-instance", (_, argv) => {
+    const value = argv.find((v) => v.startsWith("openreading://"));
+    if (value) void followReadingLink(value).catch(() => showLibrary());
+    else showLibrary();
+  });
   app.on("activate", () => {
     if (
       !quitting &&
@@ -551,6 +635,26 @@ if (!app.requestSingleInstanceLock()) {
         );
       },
     );
+    const tools = require("./reading-tools.cjs");
+    const keys = tools.credentialStore(app.getPath("userData"), safeStorage);
+    ipcMain.handle(
+      "open-reading:credential",
+      async (event, action, request) => {
+        if (!trusted(event) || settings.mode !== "local")
+          throw Error("Local desktop only");
+        return keys(action, request);
+      },
+    );
+    ipcMain.handle("open-reading:ocr", async (event, image) => {
+      if (!trusted(event)) throw Error("Untrusted reader");
+      return tools.recognizePage(
+        image,
+        app.getPath("temp"),
+        app.isPackaged
+          ? join(process.resourcesPath, "runtime")
+          : join(__dirname, "runtime"),
+      );
+    });
     ipcMain.on("open-reading:closed-ready", (event) => {
       if (trusted(event)) closeWaiters.get(event.sender.id)?.();
     });
@@ -691,42 +795,8 @@ if (!app.requestSingleInstanceLock()) {
       return { saved: true };
     });
     ipcMain.handle("open-reading:book", async (event, target) => {
-      if (
-        !trusted(event) ||
-        opening ||
-        quitting ||
-        !libraryURL ||
-        !target ||
-        ![target.workspaceId, target.memberId].every(
-          (v) => typeof v === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(v),
-        )
-      )
-        throw Error("Invalid reading window request");
-      const existing = readers.get(target.memberId);
-      if (existing && !existing.isDestroyed()) {
-        if (existing.isMinimized()) existing.restore();
-        existing.show();
-        existing.focus();
-        if (typeof target.threadId === "string")
-          existing.webContents.send("open-reading:thread", target.threadId);
-        return;
-      }
-      const window = createWindow({
-        workspaceId: target.workspaceId,
-        memberId: target.memberId,
-        threadId:
-          typeof target.threadId === "string" &&
-          /^[a-zA-Z0-9_-]{1,100}$/.test(target.threadId)
-            ? target.threadId
-            : undefined,
-      });
-      readers.set(target.memberId, window);
-      try {
-        await window.loadURL(libraryURL);
-      } catch (error) {
-        // Reloading or closing a loading book cancels the initial navigation.
-        if (!window.isDestroyed() && error.code !== "ERR_ABORTED") throw error;
-      }
+      if (!trusted(event)) throw Error("Untrusted reading window");
+      return openBookTarget(target);
     });
     ipcMain.on("open-reading:language", (event, language) => {
       if (
@@ -741,6 +811,11 @@ if (!app.requestSingleInstanceLock()) {
     });
     configureMenu();
     await open(settings.mode === "cloud" ? "cloud" : "local");
+    if (app.isPackaged) app.setAsDefaultProtocolClient("openreading");
+    const readingLink =
+      pendingReadingLink ||
+      process.argv.find((v) => v.startsWith("openreading://"));
+    if (readingLink) await followReadingLink(readingLink);
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", (event) => {

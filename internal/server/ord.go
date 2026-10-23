@@ -18,7 +18,7 @@ import (
 
 // ORD is a portable, single membership snapshot. Only this allowlist can cross
 // the boundary: no source paths, drafts, model configuration or device grants.
-var ordTables = []string{"versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "reading_states"}
+var ordTables = []string{"versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "reading_states", "note_learning", "book_preferences", "bookmarks", "recognized_pages"}
 
 const ordMaxBytes int64 = 1 << 30
 
@@ -98,10 +98,13 @@ func (s *Server) exportORD(member, version, manifest string) (path, title string
 	}
 	book := ordBook{Title: ordName(str(entry, "relativePath"), str(m, "format")), Format: str(m, "format"), DocumentID: str(m, "documentId"), MemberID: member, VersionID: version, ManifestID: manifest, Tables: map[string][]M{}}
 	queries := map[string]string{
-		"annotations": "SELECT * FROM annotations WHERE workspace_document_id=?",
-		"resolutions": "SELECT * FROM resolutions WHERE annotation_id IN(SELECT id FROM annotations WHERE workspace_document_id=?)",
-		"threads":     "SELECT * FROM threads WHERE annotation_id IN(SELECT id FROM annotations WHERE workspace_document_id=?)",
-		"messages":    "SELECT * FROM messages WHERE thread_id IN(SELECT t.id FROM threads t JOIN annotations a ON a.id=t.annotation_id WHERE a.workspace_document_id=?)",
+		"note_learning":    "SELECT n.* FROM note_learning n JOIN threads t ON t.id=n.id JOIN annotations a ON a.id=t.annotation_id WHERE a.workspace_document_id=?",
+		"book_preferences": "SELECT * FROM book_preferences WHERE id=?",
+		"bookmarks":        "SELECT * FROM bookmarks WHERE workspace_document_id=?",
+		"annotations":      "SELECT * FROM annotations WHERE workspace_document_id=?",
+		"resolutions":      "SELECT * FROM resolutions WHERE annotation_id IN(SELECT id FROM annotations WHERE workspace_document_id=?)",
+		"threads":          "SELECT * FROM threads WHERE annotation_id IN(SELECT id FROM annotations WHERE workspace_document_id=?)",
+		"messages":         "SELECT * FROM messages WHERE thread_id IN(SELECT t.id FROM threads t JOIN annotations a ON a.id=t.annotation_id WHERE a.workspace_document_id=?)",
 		// Previous edits and unsent drafts are private; only the saved revision travels.
 		"message_versions": "SELECT mv.* FROM message_versions mv JOIN messages m ON m.id=mv.message_id JOIN threads t ON t.id=m.thread_id JOIN annotations a ON a.id=t.annotation_id WHERE a.workspace_document_id=? AND mv.version=m.version",
 		"reading_states":   "SELECT * FROM reading_states WHERE workspace_document_id=?",
@@ -113,6 +116,9 @@ func (s *Server) exportORD(member, version, manifest string) (path, title string
 		}
 	}
 	versions := map[string]bool{version: true}
+	for _, b := range book.Tables["bookmarks"] {
+		versions[str(b, "version_id")] = true
+	}
 	manifests := map[string]bool{}
 	artifacts := map[string]bool{}
 	if manifest != "" {
@@ -169,6 +175,17 @@ func (s *Server) exportORD(member, version, manifest string) (path, title string
 			book.Tables[name] = append(book.Tables[name], rows[0])
 		}
 	}
+	book.Tables["recognized_pages"], e = rawQuery(tx, "SELECT rp.* FROM recognized_pages rp JOIN versions v ON v.id=rp.version_id WHERE v.document_id=(SELECT document_id FROM workspace_documents WHERE id=?)", member)
+	if e != nil {
+		return "", "", e
+	}
+	keptOCR := []M{}
+	for _, page := range book.Tables["recognized_pages"] {
+		if versions[str(page, "version_id")] {
+			keptOCR = append(keptOCR, page)
+		}
+	}
+	book.Tables["recognized_pages"] = keptOCR
 	files := map[string]string{}
 	for _, v := range book.Tables["versions"] {
 		if str(v, "document_id") != book.DocumentID {
@@ -510,6 +527,18 @@ func (s *Server) importORD(workspace, key, path string) (M, error) {
 		for _, table := range ordTables {
 			for _, row := range b.Tables[table] {
 				if v := str(row, "id"); v != "" {
+					if table == "book_preferences" {
+						if v != b.MemberID {
+							return nil, ordInvalid("阅读设置范围不一致")
+						}
+						continue
+					}
+					if table == "note_learning" {
+						if mapping[v] == "" {
+							return nil, ordInvalid("学习记录缺少对应笔记")
+						}
+						continue
+					}
 					if !ordHex(v, 32) || mapping[v] != "" {
 						return nil, ordInvalid("学习包记录编号无效或重复")
 					}
@@ -690,6 +719,14 @@ func (s *Server) importORD(workspace, key, path string) (M, error) {
 		}
 		if e = s.manifestMember(tx, mapping[b.ManifestID], member, mapping[b.VersionID]); e != nil {
 			return nil, e
+		}
+		for _, bookmark := range b.Tables["bookmarks"] {
+			if str(bookmark, "workspace_document_id") != b.MemberID {
+				return nil, ordInvalid("书签范围不一致")
+			}
+			if _, e := s.memberVersion(tx, member, mapping[str(bookmark, "version_id")]); e != nil {
+				return nil, e
+			}
 		}
 		// Make the chosen snapshot the initial file; historical anchors keep their IDs.
 		return M{"workspaceDocumentId": member, "documentId": doc, "versionId": mapping[b.VersionID], "resourceManifestId": mapping[b.ManifestID], "title": title, "annotations": len(annotations), "messages": len(b.Tables["messages"]), "versions": len(b.Tables["versions"])}, nil

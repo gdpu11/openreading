@@ -51,5 +51,14 @@ export interface ReaderAdapter {
     policy: "selection" | "nearby",
   ) => Promise<any>;
   search: (term: string) => Promise<number>;
+  isReady: () => boolean;
+  getLocation: () => any;
+  getHistory: () => any[];
+  turnPage: (direction: number) => void;
+  addPageNote: () => void;
+  navigateLocation: (locator: any) => Promise<void>;
+  sectionText: () => string;
+  captureSection: () => Promise<Captured | null>;
+  pageImage: () => Promise<string>;
   dispose?: () => void;
 }

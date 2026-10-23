@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("openReadingDesktop", {
   renderBookPDF: (html) => ipcRenderer.invoke("open-reading:render-pdf", html),
   saveConvertedBook: (data, format, name) =>
     ipcRenderer.invoke("open-reading:save-conversion", { data, format, name }),
+  credential: (action, request) =>
+    ipcRenderer.invoke("open-reading:credential", action, request),
+  recognizePage: (image) => ipcRenderer.invoke("open-reading:ocr", image),
   showLibrary: () => ipcRenderer.send("open-reading:library"),
   onThread: (navigate) => {
     const listener = (_, id) => navigate(id);

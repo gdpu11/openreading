@@ -25,6 +25,14 @@ The native build workflow uploads these under `Open-Reading-mac-arm64`, `Open-Re
 
 `npm run desktop:pack -- --mac --x64` and `--win --x64` remain available. Build one platform and architecture per invocation: combining architectures would put only one Go service into multiple incompatible packages. Run `npm run test:desktop-packaging` to check target selection and architecture validation.
 
+For local macOS updates, keep only one rollback app in `release/installed-app-backups/`. After copying the installed app there, installing the new build and verifying its hashes, remove older app backups with:
+
+```sh
+python3 scripts/prune-app-backups.py --keep "/absolute/path/to/release/installed-app-backups/Open Reading-previous.app"
+```
+
+Pass the backup from the current installation explicitly, since copied apps can retain old timestamps. If backup, installation or verification fails, keep the existing backups. The helper leaves library database backups untouched. Check the retention helper with `PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-prune-app-backups.py`.
+
 Library data is stored separately from the application. The Library menu can select an existing local library directory; stop any other service using that directory first. Closing reading windows flushes drafts and progress before the shared backend exits.
 
 Optional self-hosted use requires your own HTTPS server. Set `OPENREADING_CLOUD_URL` to its HTTPS origin when launching the desktop app. No hosted server is included or configured by default. Local reading and LAN sync do not need this option.

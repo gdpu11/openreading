@@ -70,13 +70,17 @@ test("Android production startup works without modern WebView built-ins", async 
   });
   await page.goto(origin);
   await expect(
+    page.getByRole("heading", { name: "书架", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(
     page.getByRole("heading", { name: "把阅读带在身边" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "扫描电脑二维码" }),
   ).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("扫码直连同一网络中的电脑");
-  await page.getByRole("button", { name: "切换黑白主题" }).click();
+  await expect(page.getByLabel("同步文件与笔记")).toHaveCount(0);
+  await page.getByLabel("深色模式", { exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(errors).toEqual([]);
 });
@@ -228,13 +232,12 @@ test("Android scan starts automatically and hands the QR to native pairing", asy
     };
   });
   await page.goto(origin);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
   await page
     .getByRole("button", { name: "扫描电脑二维码", exact: true })
     .click();
   await expect(page.locator(".mobile-approval")).toContainText("123456");
-  await expect(page.getByRole("status")).toHaveText(
-    "请在电脑端核对确认码并授权",
-  );
+  await expect(page.locator(".mobile-approval")).toContainText("请在电脑上核对确认码");
   const calls = await page.evaluate(() => (window as any).__nativeCalls);
   const scan = calls.find(
     (call: any) => call.plugin === "CapacitorBarcodeScanner",

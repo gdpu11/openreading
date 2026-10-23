@@ -4,7 +4,12 @@
   "directories": {
     "output": "release/desktop"
   },
-  "files": ["desktop/main.cjs", "desktop/preload.cjs", "package.json"],
+  "files": [
+    "desktop/main.cjs",
+    "desktop/preload.cjs",
+    "desktop/reading-tools.cjs",
+    "package.json"
+  ],
   "extraResources": [
     {
       "from": "desktop/mobile",
@@ -13,8 +18,13 @@
     {
       "from": "desktop/runtime",
       "to": "runtime"
+    },
+    {
+      "from": "internal/server/static/licenses",
+      "to": "licenses"
     }
   ],
+  "protocols": [{ "name": "Open Reading", "schemes": ["openreading"] }],
   "asar": true,
   "npmRebuild": false,
   "publish": null,

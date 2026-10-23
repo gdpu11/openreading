@@ -7,3 +7,4 @@ for (const dir of ["cmaps", "standard_fonts", "wasm", "iccs"])
     "internal/server/static/pdf-assets/" + dir,
     { recursive: true },
   );
+await import("./bundle-licenses.mjs");

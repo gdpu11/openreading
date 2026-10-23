@@ -6,7 +6,7 @@ Open Reading is a local-first reader for **EPUB, PDF, Markdown and TXT**. Ask qu
 
 **MIT licensed · Preview software · English / 简体中文**
 
-[中文说明](README.zh-CN.md) · [Downloads](https://github.com/gdpu11/openreading/releases) · [Known limitations](docs/known-limitations.md) · [Security](SECURITY.md)
+[中文说明](README.zh-CN.md) · [Downloads](https://github.com/gdpu11/openreading/releases) · [Known limitations](docs/known-limitations.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md)
 
 ![Open Reading library](docs/images/library.png)
 
@@ -19,6 +19,7 @@ Open Reading is a local-first reader for **EPUB, PDF, Markdown and TXT**. Ask qu
 - **Keep notes with their source.** Highlight passages, write notes, revisit discussions and export a book with saved annotations in an `.ord` learning package.
 - **Sync over your LAN.** Pair your Android phone with the desktop, approve the device and sync selected workspaces. Offline notes are queued for later synchronization; conflicting edits retain drafts.
 - **See your reading activity.** A foreground-only session timer, global calendar, streaks, word counts and configurable reading-time estimates.
+- **Find and revisit ideas.** Search entire books and indexed library content; search and tag notes, review due notes, save named bookmarks and export notes with source links. See [reading improvements](docs/reading-improvements.md).
 - **Organize your library.** Covers, search, sorting, format filters, favorites and finished status. Removing a book from a library keeps its file; original-file deletion requires a separate explicit choice.
 
 ## Try passage-based AI questions
@@ -102,9 +103,9 @@ Tests use generated fixtures and isolated temporary libraries. Live cloud tests 
 ## Privacy and boundaries
 
 - Books and notes stay in your selected local data directory. LAN sync is opt-in, uses certificate-pinned TLS and requires desktop approval for each device.
-- Optional AI requests go to the endpoint you configure. API keys remain in server-process memory and are excluded from backups; you must re-enter them after a restart.
+- Optional AI requests go to the endpoint you configure. API keys stay in server-process memory by default and are excluded from backups. Desktop users can opt into OS-protected credential storage bound to the configured provider endpoint.
 - No hosted service is configured in the public source. Self-hosting is optional; see [the architecture notes](docs/architecture.md).
-- Scanned pages are not OCRed. Fixed-layout, encrypted and unusually complex books may not render or convert faithfully. PDF text reflow may lose illustrations and complex layout.
+- Desktop OCR recognizes individual pages using macOS Vision or an installed Tesseract engine and saves separate text; it does not rewrite the PDF. Fixed-layout, encrypted and unusually complex books may not render or convert faithfully. PDF text reflow may lose illustrations and complex layout.
 - Back up your library before trying preview versions. Original-file deletion is permanent; removing a library entry is reversible.
 - The public repository contains generated demonstration books only. Personal libraries, deployment records, credentials and local test screenshots are excluded.
 
@@ -113,3 +114,5 @@ Tests use generated fixtures and isolated temporary libraries. Live cloud tests 
 Bug reports and small, focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Open Reading source code is licensed under [MIT](LICENSE). Dependencies retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `third-party/`.
+
+See the [compliance review and unresolved distribution items](docs/compliance-review.md) and [asset provenance](docs/asset-provenance.md). The Android scanner includes Google ML Kit with separate terms and metrics disclosures. Rebuilt clients include an offline `/licenses/index.html`; older release packages have not been retroactively updated by source changes.

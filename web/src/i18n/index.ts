@@ -20,6 +20,8 @@ declare global {
         format: "pdf" | "epub",
         name: string,
       ) => Promise<{ saved: boolean }>;
+      credential: (action: "load" | "save" | "forget", request: {id:string;target:string;key?:string}) => Promise<string | boolean | null>;
+      recognizePage: (image: string) => Promise<string>;
       showLibrary: () => void;
       onThread: (navigate: (id: string) => void) => () => void;
       onClosing: (flush: () => Promise<void>) => () => void;

@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 let processHandle: ChildProcess,
-  base = "http://127.0.0.1:7319",
+  base = "http://127.0.0.1:" + (process.env.OR_TEST_PORT || "7319"),
   storage: any,
   csrf = "",
   client: any,
@@ -46,12 +46,12 @@ async function startServer() {
   let out = "";
   return new Promise<string>((resolve, reject) => {
     processHandle = spawn(
-      path.resolve("release/openreading"),
+      path.resolve(process.env.OR_TEST_BINARY || "release/openreading"),
       [
         "--data-dir",
         dataDir,
         "--port",
-        "7319",
+        process.env.OR_TEST_PORT || "7319",
         "--allow-mock",
         ...(process.env.OR_ANDROID_APK
           ? ["--android-apk", process.env.OR_ANDROID_APK]
@@ -1328,10 +1328,12 @@ for (const [format, file] of [
     await expect(header).toBeHidden();
     await page.mouse.move(20, viewport.height - 5);
     await expect(footer).toBeVisible();
-    await page.getByLabel("当前文档搜索").focus();
+    await page.getByRole("button", { name: "全书搜索", exact: true }).click();
+    await page.getByLabel("全书关键词").focus();
     await page.clock.runFor(10000);
     await expect(header).toBeVisible();
-    await page.getByLabel("当前文档搜索").blur();
+    await page.getByLabel("全书关键词").blur();
+    await page.getByLabel("关闭阅读工具").click();
     await page.clock.runFor(10000);
     await expect(header).toBeHidden();
     await page.keyboard.press("Tab");

@@ -53,6 +53,8 @@ export type MobileState = {
   outbox: any[];
   readingEvents?: ReadingEvent[];
   drafts: Record<string, string>;
+  bookPreferences?: Record<string, any>;
+  lastBook?: string;
 };
 let generation = 0,
   serial = Promise.resolve();
@@ -267,6 +269,13 @@ export async function clearChunks(key: string) {
     }).finally(() => d.close());
   }
 }
+export async function coverCache(
+  key: string,
+  value?: Blob,
+): Promise<Blob | undefined> {
+  if (!/^[a-f0-9]{64}$/.test(key)) throw Error("无效的封面缓存标识");
+  return idb("cover:" + key, value);
+}
 export async function clearFiles() {
   if (native) {
     try {
@@ -276,7 +285,8 @@ export async function clearFiles() {
         recursive: true,
       });
     } catch {}
-  } else {
+  }
+  {
     const d = await db();
     await new Promise<void>((resolve, reject) => {
       const tx = d.transaction("data", "readwrite");

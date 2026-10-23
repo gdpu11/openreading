@@ -10,9 +10,9 @@ DEST = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "release/pub
 if DEST.exists():
     raise SystemExit("Destination already exists; choose a new empty directory")
 SKIP = {".git", "node_modules", ".gradle", ".idea", "build", "DerivedData", "xcuserdata", "__pycache__", "capacitor-cordova-android-plugins", "capacitor-cordova-ios-plugins"}
-ROOT_FILES = ["README.md", "README.zh-CN.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md", "go.mod", "go.sum", "package.json", "package-lock.json", "index.html", "m0.html", "tsconfig.json", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "capacitor.config.ts", "start.command", ".gitattributes"]
-DOCS = ["architecture.md", "decisions.md", "known-limitations.md", "ord-format.md", "lan-sync.md", "native-clients.md", "fixtures.md", "release-review.md"]
-SCRIPTS = ["build.sh", "build-desktop.mjs", "copy-assets.mjs", "fixtures.mjs", "generate-icons.py", "notices.py", "openapi.py", "package-desktop.mjs", "verify.sh", "export-public-source.py"]
+ROOT_FILES = ["README.md", "README.zh-CN.md", "LICENSE", "PRIVACY.md", "SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md", "go.mod", "go.sum", "package.json", "package-lock.json", "index.html", "m0.html", "tsconfig.json", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "capacitor.config.ts", "start.command", ".gitattributes"]
+DOCS = ["architecture.md", "decisions.md", "known-limitations.md", "ord-format.md", "lan-sync.md", "native-clients.md", "fixtures.md", "release-review.md", "reading-improvements.md", "compliance-review.md", "asset-provenance.md"]
+SCRIPTS = ["build.sh", "build-desktop.mjs", "copy-assets.mjs", "bundle-licenses.mjs", "fixtures.mjs", "generate-icons.py", "notices.py", "openapi.py", "package-desktop.mjs", "desktop-target.mjs", "desktop-packaging.test.mjs", "verify-desktop.mjs", "prune-app-backups.py", "test-prune-app-backups.py", "verify.sh", "export-public-source.py"]
 
 def copy(file):
     if file.is_symlink() or not file.is_file():

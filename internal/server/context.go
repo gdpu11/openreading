@@ -177,6 +177,33 @@ func (s *Server) buildContext(tx *sql.Tx, thread, message M) (M, error) {
 			addSource(&nearby, string(runes[end:to]), obj(anchor, "displayLocation"), M{"block": block["id"], "start": end, "end": to})
 		}
 	}
+	if len(arr(pkg, "noteIds")) > 10 {
+		return nil, problem(400, "CONTEXT_TOO_LARGE", "最多同时选择 10 条笔记", false)
+	}
+	seenNotes := map[string]bool{}
+	for _, raw := range arr(pkg, "noteIds") {
+		noteID, ok := raw.(string)
+		if !ok || seenNotes[noteID] {
+			continue
+		}
+		seenNotes[noteID] = true
+		notes, err := s.threadData(tx, "JOIN workspace_documents wd ON wd.id=a.workspace_document_id WHERE t.id=? AND wd.workspace_id=?", noteID, member["workspaceId"])
+		if err != nil {
+			return nil, err
+		}
+		if len(notes) != 1 {
+			return nil, problem(403, "PATH_NOT_ALLOWED", "所选笔记不属于当前工作区", false)
+		}
+		note := notes[0]
+		noteAnchor := obj(note, "anchor")
+		text := "原文：" + str(obj(noteAnchor, "quote"), "visible")
+		for _, m := range note["messages"].([]M) {
+			if str(m, "role") == "user" && str(m, "recipient") == "note" {
+				text += "\n个人笔记：" + str(m, "body")
+			}
+		}
+		sources = append(sources, M{"text": text, "sourceType": "saved-note", "threadId": noteID, "locator": M{"label": "已选笔记 · " + str(obj(noteAnchor, "displayLocation"), "label")}, "anchor": noteAnchor, "documentVersionId": noteAnchor["documentVersionId"], "extractionArtifactId": noteAnchor["extractionArtifactId"], "resourceManifestId": noteAnchor["resourceManifestId"]})
+	}
 	question := str(message, "body")
 	omissions := []string{}
 	messages := []M{{"role": "system", "content": systemPrompt}}

@@ -1,3 +1,10 @@
+import { WorkspaceSearch } from "./library/WorkspaceSearch";
+import { NotesCenter } from "./learning/NotesCenter";
+import { BookTools } from "./readers/BookTools";
+import { BackupSettings } from "./settings/BackupSettings";
+import { restoreCredentials } from "./settings/credentials";
+import { ArticleImport } from "./library/ArticleImport";
+import "./learning/learning.css";
 import {
   DocumentFormatFilter,
   type DocumentFormat,
@@ -126,6 +133,7 @@ function App() {
     [threads, setThreads] = useState<any[]>([]),
     [activeThread, setActiveThread] = useState<string | null>(null),
     [navigateThread, setNavigateThread] = useState(readerTarget?.threadId),
+    [readerReady, setReaderReady] = useState(0),
     [selection, setSelection] = useState<Captured | null>(null),
     [toolbarPosition, setToolbarPosition] = useState({ left: 0, top: 0 }),
     [composing, setComposing] = useState(false),
@@ -145,6 +153,9 @@ function App() {
     [wsName, setWsName] = useState(""),
     [search, setSearch] = useState(""),
     [insideSearch, setInsideSearch] = useState(""),
+    [articleImport, setArticleImport] = useState(false),
+    [workspaceSearch, setWorkspaceSearch] = useState(false),
+    [contextNoteIds, setContextNoteIds] = useState<string[]>([]),
     [outline, setOutline] = useState<OutlineItem[]>([]),
     [navTab, setNavTab] = useState(readerTarget ? "outline" : "files"),
     [notesMode, setNotesMode] = useState(false),
@@ -192,13 +203,17 @@ function App() {
     if (
       navigateThread &&
       threads.some((t) => t.threadId === navigateThread) &&
-      reader.current
+      reader.current?.isReady()
     ) {
+      const target = threads.find((t) => t.threadId === navigateThread);
+      if (target) void jump(target);
       pickThread([navigateThread]);
       setNavigateThread(undefined);
     }
-  }, [navigateThread, threads, doc]);
+  }, [navigateThread, threads, doc, readerReady]);
   const documentRequest = useRef(0);
+  const pendingLocation = useRef<any>(null);
+  const pendingAssistant = useRef<any>(null);
   const reading = useDesktopReading(ready && !login);
   const readingMain = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -360,11 +375,14 @@ function App() {
             .map((k) => [k, p[k]]),
         ),
       });
-      setProviders(prov);
+      setProviders(await restoreCredentials(prov,notify));
       setWorkspace(
         ws.find(
           (x: any) =>
-            x.id === (readerTarget?.workspaceId || p.activeWorkspaceId),
+            x.id ===
+            (readerTarget?.workspaceId ||
+              new URLSearchParams(location.search).get("workspace") ||
+              p.activeWorkspaceId),
         ) ||
           ws[0] ||
           null,
@@ -474,6 +492,7 @@ function App() {
     setSelection(null);
     setComposing(false);
     setActiveThread(null);
+    setContextNoteIds([]);
     setDraft("");
     setDraftReady(false);
     setNotesMode(false);
@@ -502,7 +521,28 @@ function App() {
     if (patch.language) setLanguage(patch.language);
     const next = { ...prefs, ...patch };
     setPrefs(next);
-    void api("/preferences", "PUT", patch).catch(fail);
+    const readingKeys = [
+      "fontSize",
+      "lineHeight",
+      "fontFamily",
+      "theme",
+      "pdfScale",
+      "pdfSpread",
+      "epubSpread",
+      "pdfRotation",
+      "epubFlow",
+      "encoding",
+    ];
+    if (doc && Object.keys(patch).some((key) => readingKeys.includes(key))) {
+      const own = Object.fromEntries(
+        readingKeys.map((key) => [key, (next as any)[key]]),
+      );
+      void api(
+        `/documents/${doc.workspaceDocumentId}/preferences`,
+        "PUT",
+        own,
+      ).catch(fail);
+    } else void api("/preferences", "PUT", patch).catch(fail);
   };
   useEffect(() => {
     document.documentElement.dataset.theme = prefs.theme;
@@ -595,7 +635,10 @@ function App() {
         !!current?.historical !== !!prepared.historical ||
         current?.resourceManifestId !== prepared.resourceManifestId;
       if (changed) {
-        if (current?.workspaceDocumentId !== d.id) setThreads([]);
+        if (current?.workspaceDocumentId !== d.id) {
+          setThreads([]);
+          setContextNoteIds([]);
+        }
         setSelection(null);
         setComposing(false);
         setActiveThread(null);
@@ -603,6 +646,25 @@ function App() {
         setDraftReady(false);
         draftLoaded.current = false;
       }
+      const [globalPrefs, ownPrefs] = await Promise.all([
+        api("/preferences"),
+        api(`/documents/${d.id}/preferences`),
+      ]);
+      if (
+        sequence !== openSequence.current ||
+        currentWorkspace.current?.id !== openingWorkspace
+      )
+        return;
+      setPrefs((current) => ({
+        ...defaults,
+        language: getLanguage(),
+        ...Object.fromEntries(
+          Object.keys(defaults)
+            .filter((key) => globalPrefs[key] !== undefined)
+            .map((key) => [key, globalPrefs[key]]),
+        ),
+        ...ownPrefs.data,
+      }));
       setMember(d);
       setChange(prepared.historical && !version ? "unavailable" : "");
       if (initialAnchor) {
@@ -701,6 +763,20 @@ function App() {
     }, 15000);
     return () => clearInterval(timer);
   }, [doc?.version.id, doc?.workspaceDocumentId]);
+  const applyAssistantDraft = (body: string) => {
+    const pending = pendingAssistant.current;
+    if (
+      pending &&
+      pending.member === doc?.workspaceDocumentId &&
+      (!pending.thread || pending.thread === activeThread)
+    ) {
+      pendingAssistant.current = null;
+      setRecipient("assistant");
+      setContextNoteIds(pending.noteIds || []);
+      return body ? body + "\n\n" + pending.body : pending.body;
+    }
+    return body;
+  };
   const draftID = doc
     ? doc.workspaceDocumentId + ":" + (activeThread || "new")
     : "";
@@ -758,9 +834,10 @@ function App() {
             Date.parse(server.updatedAt || "1970-01-01")
             ? local
             : server;
-        setDraft(d.body || "");
+        setDraft(applyAssistantDraft(d.body || ""));
         if (
-          d.selection?.anchor.workspaceDocumentId === doc.workspaceDocumentId &&
+          d.selection?.anchor.workspaceDocumentId ===
+            doc?.workspaceDocumentId &&
           d.selection.anchor.documentVersionId === doc.version.id
         ) {
           setSelection(d.selection);
@@ -773,7 +850,7 @@ function App() {
       .catch(async () => {
         const d = await localDraft(draftID);
         if (alive) {
-          setDraft(d?.body || "");
+          setDraft(applyAssistantDraft(d?.body || ""));
           draftLoaded.current = true;
           setDraftReady(true);
           setSaveState("等待保存");
@@ -893,7 +970,7 @@ function App() {
       annotationAnchor,
       policy as any,
     );
-    return { ...contextPackage, policy };
+    return { ...contextPackage, policy, noteIds: contextNoteIds };
   };
   const previewContext = async () => {
     try {
@@ -1032,6 +1109,7 @@ function App() {
               },
               anchor,
             );
+            setNavigateThread(t.threadId);
           }
           return;
         }
@@ -1046,22 +1124,27 @@ function App() {
       const anchor = source.anchor;
       if (!anchor)
         throw Error("此历史来源没有精确定位器，请查看该回答的固定上下文");
-      if (source.documentVersionId === doc?.version.id) {
+      if (
+        source.documentVersionId === doc?.version.id &&
+        (!anchor.workspaceDocumentId ||
+          anchor.workspaceDocumentId === doc?.workspaceDocumentId)
+      ) {
         await reader.current?.navigateTo(anchor);
         return;
       }
+      const sourceMember =
+        anchor.workspaceDocumentId && anchor.workspaceDocumentId !== member.id
+          ? await api(`/documents/${anchor.workspaceDocumentId}`)
+          : member;
       const versions = await api(
-        "/documents/" +
-          member.documentId +
-          "/versions?workspaceDocumentId=" +
-          member.id,
+        `/documents/${sourceMember.documentId}/versions?workspaceDocumentId=${sourceMember.id}`,
       );
       const version = versions.find(
         (v: any) => v.id === source.documentVersionId,
       );
       if (!version) throw Error("原始来源版本不可用");
       await open(
-        member,
+        sourceMember,
         {
           ...version,
           manifestId: source.resourceManifestId,
@@ -1082,6 +1165,21 @@ function App() {
       fail(e);
     }
   };
+  useEffect(() => {
+    if (!ready || !workspace || readerTarget) return;
+    const query = new URLSearchParams(location.search),
+      book = query.get("book");
+    if (!book) return;
+    window.history.replaceState(null, "", location.pathname);
+    void api(`/documents/${encodeURIComponent(book)}`)
+      .then(async (d) => {
+        if (d.workspaceId !== workspace.id)
+          throw Error("笔记链接不属于当前工作区");
+        await open(d);
+        if (query.get("thread")) setNavigateThread(query.get("thread")!);
+      })
+      .catch(fail);
+  }, [ready, workspace?.id]);
   const exportNotes = async () => {
     try {
       const result = await api("/exports", "POST", {
@@ -1404,6 +1502,24 @@ function App() {
             </button>
           </div>
           <div className="top-actions">
+            {workspace && !readerTarget && (
+              <button
+                title={tr("搜索整个书库")}
+                onClick={() => setWorkspaceSearch(true)}
+              >
+                <Search size={17} />
+                {tr("全文搜索")}
+              </button>
+            )}
+            {workspace && !readerTarget && (
+              <button
+                title={tr("导入网页文章")}
+                onClick={() => setArticleImport(true)}
+              >
+                <Plus size={17} />
+                {tr("网页文章")}
+              </button>
+            )}
             <span className="local-status">
               <span />
               {serverMode ? tr("云端私人阅读空间") : tr("本机 · 离线笔记可用")}
@@ -1659,75 +1775,58 @@ function App() {
               </button>
             )}
             {notesMode ? (
-              <div className="notes-page">
-                <div className="page-title">
-                  <div>
-                    <span className="eyebrow">YOUR LEARNING TRAIL</span>
-                    <h1>{tr("笔记与复习")}</h1>
-                    <p>{tr("把读过的内容，变成自己的理解。")}</p>
-                  </div>
-                  <button className="secondary" onClick={exportNotes}>
-                    <Download size={16} />
-                    {tr("导出 Markdown")}
-                  </button>
-                </div>
-                <div className="filter-tabs">
-                  {["全部", "待理解", "已理解", "待复习"].map((f) => (
-                    <button
-                      className={filter === f ? "active" : ""}
-                      onClick={() => setFilter(f)}
-                      key={f}
-                    >
-                      {tr(f)}
-                    </button>
-                  ))}
-                </div>
-                {notes
-                  .filter(
-                    (n) => filter === "全部" || n.learningState === filter,
-                  )
-                  .map((n) => (
-                    <button
-                      className="note-summary"
-                      key={n.threadId}
-                      onClick={async () => {
-                        const d = documents.find(
-                          (d) => d.id === n.workspaceDocumentId,
-                        );
-                        if (d) {
-                          if (desktopLibrary)
-                            await desktop!.openBook(
-                              workspace.id,
-                              d.id,
-                              n.threadId,
-                            );
-                          else {
-                            await open(d);
-                            setNavigateThread(n.threadId);
-                          }
-                        }
-                      }}
-                    >
-                      <small>
-                        {n.title} · {n.anchor.displayLocation.label}
-                      </small>
-                      <blockquote>
-                        {n.anchor.quote.visible || tr("页级笔记")}
-                      </blockquote>
-                      <span>
-                        {tr(n.learningState)} · {n.messages?.length || 0}
-                        {tr("条讨论")}
-                      </span>
-                    </button>
-                  ))}
-                {!notes.length && (
-                  <div className="empty">
-                    <BookMarked size={40} />
-                    <h2>{tr("让理解留下来")}</h2>
-                    <p>{tr("阅读时选择原文，留下第一条笔记。")}</p>
-                  </div>
-                )}
-              </div>
+              <NotesCenter
+                notes={notes.map((n: any) => ({
+                  ...n,
+                  workspaceId: workspace.id,
+                }))}
+                onOpen={async (n) => {
+                  try {
+                    const d = await api(`/documents/${n.workspaceDocumentId}`);
+                    if (desktopLibrary)
+                      await desktop!.openBook(workspace.id, d.id, n.threadId);
+                    else {
+                      await open(d);
+                      setNavigateThread(n.threadId);
+                    }
+                  } catch (e) {
+                    fail(e);
+                  }
+                }}
+                onSave={async (n, changes) => {
+                  await api(`/threads/${n.threadId}/learning`, "PUT", changes);
+                  setNotes(await api(`/workspaces/${workspace.id}/notes`));
+                }}
+                onAsk={async (selected) => {
+                  try {
+                    const n = selected[0],
+                      d = await api(`/documents/${n.workspaceDocumentId}`),
+                      versions = await api(
+                        `/documents/${d.documentId}/versions?workspaceDocumentId=${d.id}`,
+                      ),
+                      version = versions.find(
+                        (v: any) => v.id === n.anchor.documentVersionId,
+                      );
+                    if (!version) throw Error("笔记原文版本不可用");
+                    pendingAssistant.current = {
+                      member: d.id,
+                      thread: n.threadId,
+                      noteIds: selected.map((v) => v.threadId),
+                      body: "请比较这些笔记的观点，指出共同点和差异，并引用材料。",
+                    };
+                    await open(
+                      d,
+                      { ...version, manifestId: n.anchor.resourceManifestId },
+                      n.anchor,
+                    );
+                    setNavigateThread(n.threadId);
+                    setRecipient("assistant");
+                    setRightOpen(true);
+                  } catch (e) {
+                    fail(e);
+                  }
+                }}
+              />
             ) : doc ? (
               <>
                 <div className="document-bar">
@@ -1831,21 +1930,30 @@ function App() {
                         <option value="double">{tr("一屏双页")}</option>
                       </select>
                     )}
-                    <div className="in-doc-search">
-                      <Search size={14} />
-                      <input
-                        aria-label={tr("当前文档搜索")}
-                        placeholder={tr("文档内查找")}
-                        value={insideSearch}
-                        onChange={(e) => setInsideSearch(e.target.value)}
-                        onKeyDown={async (e) => {
-                          if (e.key === "Enter")
-                            notify(
-                              `当前页或章节找到 ${(await reader.current?.search(insideSearch)) || 0} 处`,
-                            );
-                        }}
-                      />
-                    </div>
+                    <BookTools
+                      doc={doc}
+                      reader={reader}
+                      outline={outline}
+                      encoding={prefs.encoding}
+                      onError={setError}
+                      onAsk={(captured) => {
+                        const body = "请解释本节的核心观点，并结合原文举例。";
+                        if (activeThread || !draftReady)
+                          pendingAssistant.current = {
+                            member: doc.workspaceDocumentId,
+                            body,
+                          };
+                        else
+                          setDraft((draft) =>
+                            draft ? draft + "\n\n" + body : body,
+                          );
+                        setSelection(captured);
+                        setActiveThread(null);
+                        setComposing(true);
+                        setRecipient("assistant");
+                        setRightOpen(true);
+                      }}
+                    />
                     {doc.format === "pdf" && (
                       <>
                         <select
@@ -2002,6 +2110,19 @@ function App() {
                     onProgress={progress}
                     onOutline={setOutline}
                     onResolved={loadThreads}
+                    onReady={() => {
+                      setReaderReady((value) => value + 1);
+                      const pending = pendingLocation.current;
+                      if (
+                        pending &&
+                        doc.workspaceDocumentId === pending.member
+                      ) {
+                        pendingLocation.current = null;
+                        void reader.current
+                          ?.navigateLocation(pending.locator)
+                          .catch(fail);
+                      }
+                    }}
                     onError={(text) => setError(text)}
                   />
                   {selection &&
@@ -2438,6 +2559,11 @@ function App() {
                           <option value="selection">{tr("仅选段")}</option>
                           <option value="nearby">{tr("选段与附近内容")}</option>
                         </select>
+                        {contextNoteIds.length > 0 && (
+                          <button onClick={() => setContextNoteIds([])}>
+                            {tr("附带笔记")} {contextNoteIds.length} ×
+                          </button>
+                        )}
                         <button onClick={previewContext}>
                           {tr("预览发送内容")}
                         </button>
@@ -2555,6 +2681,37 @@ function App() {
             setSourceModal(false);
           }}
           onError={fail}
+        />
+      )}
+      {workspaceSearch && workspace && (
+        <WorkspaceSearch
+          workspace={workspace.id}
+          onClose={() => setWorkspaceSearch(false)}
+          onOpen={async (hit) => {
+            const d = await api(`/documents/${hit.workspaceDocumentId}`);
+            const versions = await api(
+              `/documents/${d.documentId}/versions?workspaceDocumentId=${d.id}`,
+            );
+            const version = versions.find((v: any) => v.id === hit.versionId);
+            if (!version) throw Error("搜索结果版本已不可用，请更新索引");
+            pendingLocation.current = { member: d.id, locator: hit.locator };
+            await open(d, version);
+            if (
+              docRef.current?.version.id === hit.versionId &&
+              reader.current?.isReady()
+            ) {
+              pendingLocation.current = null;
+              await reader.current.navigateLocation(hit.locator);
+            }
+            setWorkspaceSearch(false);
+          }}
+        />
+      )}
+      {articleImport && workspace && (
+        <ArticleImport
+          workspace={workspace.id}
+          onClose={() => setArticleImport(false)}
+          onDone={() => void loadDocuments().catch(fail)}
         />
       )}
       {showSettings && (
@@ -3482,6 +3639,7 @@ function SettingsModal({
               "完整备份包含已缓存文档、受保护版本、批注、问答和提取产物。未打开的原始资料不自动打包；API Key 不进入备份。",
             )}
           </p>
+          <BackupSettings />
           <div className="settings-actions">
             <button
               className="primary"

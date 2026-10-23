@@ -75,6 +75,7 @@ type Props = {
   onOutline: (outline: OutlineItem[]) => void;
   onError: (s: string) => void;
   onResolved?: () => void;
+  onReady?: () => void;
 };
 export const Reader = forwardRef<ReaderAdapter, Props>(
   function Reader(props, ref) {
@@ -146,7 +147,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           : { first, last, total },
       );
     };
+    const currentLocator = useRef<any>({});
+    const navigationHistory = useRef<any[]>([]);
     const publishPosition = (locator: any, fraction?: number | null) => {
+      currentLocator.current = locator;
       const value =
         fraction == null || !Number.isFinite(fraction)
           ? null
@@ -250,6 +254,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         publishPosition(
           {
             cfi,
+            href: location.start.href,
             spineIndex: location.start.index,
             ...(scrolling ? { scrollTop: el.scrollTop } : {}),
           },
@@ -852,6 +857,11 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       },
       resolveAnchor: resolve,
       async navigateTo(anchor) {
+        if (Object.keys(currentLocator.current).length)
+          navigationHistory.current = [
+            ...navigationHistory.current.slice(-49),
+            { ...currentLocator.current },
+          ];
         const sel = anchor.selectors.find((x) => x.type === "pdf");
         if (doc.format === "pdf") {
           const index =
@@ -920,6 +930,103 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           policy,
         };
       },
+      isReady: () =>
+        !loading &&
+        !error &&
+        !needsPassword &&
+        (doc.format === "pdf" ? !!pdf.current : !!root()),
+      getLocation: () =>
+        doc.format === "pdf"
+          ? { pageIndex: pdfCurrentPage.current }
+          : doc.format === "epub"
+            ? { ...currentLocator.current }
+            : { scrollTop: host.current?.scrollTop || 0 },
+      getHistory: () => [...navigationHistory.current],
+      turnPage: (direction) => {
+        if (doc.format === "pdf")
+          goToPdfPage(pdfCurrentPage.current + direction);
+        else turnPage(direction < 0 ? -1 : 1);
+      },
+      addPageNote: () => {
+        pageNote();
+      },
+      sectionText: () => (root() ? textMap(root()!).text : ""),
+      async captureSection() {
+        const el = root();
+        if (!el) throw Error("当前页没有可选文字");
+        const range = el.ownerDocument.createRange();
+        range.selectNodeContents(el);
+        return makeSelection(range, el);
+      },
+      async pageImage() {
+        if (doc.format !== "pdf" || !pdf.current)
+          throw Error("请打开 PDF 页面后使用 OCR");
+        const page = await pdf.current.getPage(pdfCurrentPage.current + 1);
+        const natural = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({
+          scale: Math.min(2, 2200 / Math.max(natural.width, natural.height)),
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvas, viewport }).promise;
+        try {
+          return canvas.toDataURL("image/png");
+        } finally {
+          canvas.width = canvas.height = 0;
+        }
+      },
+      async navigateLocation(locator) {
+        if (Object.keys(currentLocator.current).length)
+          navigationHistory.current = [
+            ...navigationHistory.current.slice(-49),
+            { ...currentLocator.current },
+          ];
+        if (doc.format === "pdf") {
+          goToPdfPage(locator.pageIndex || 0);
+        } else if (doc.format === "epub" && rendition.current) {
+          await rendition.current.display(locator.cfi || locator.href);
+        } else if (locator.heading !== undefined) {
+          textRoot.current
+            ?.querySelectorAll("h1,h2,h3,h4")
+            [locator.heading]?.scrollIntoView({ block: "start" });
+        } else if (host.current)
+          host.current.scrollTop = locator.scrollTop || 0;
+        if (locator.search) {
+          for (let i = 0; i < 40; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            const el = root();
+            if (!el) continue;
+            const map = textMap(el).text;
+            let at = -1;
+            for (
+              let occurrence = 0;
+              occurrence <= (locator.occurrence || 0);
+              occurrence++
+            ) {
+              at = map
+                .toLocaleLowerCase()
+                .indexOf(locator.search.toLocaleLowerCase(), at + 1);
+              if (at < 0) break;
+            }
+            if (at < 0) continue;
+            const range = rangeAt(
+              el,
+              cpOffset(map, at),
+              cpOffset(map, at + locator.search.length),
+            );
+            range?.startContainer.parentElement?.scrollIntoView({
+              block: "center",
+            });
+            if (range && (window as any).Highlight && (CSS as any).highlights)
+              (CSS as any).highlights.set(
+                "search",
+                new (window as any).Highlight(range),
+              );
+            break;
+          }
+        }
+      },
       async search(term) {
         if (!term) return 0;
         if (doc.format === "epub" && book.current) {
@@ -960,6 +1067,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
     useEffect(() => {
       const gen = ++generation.current;
       setLoading(true);
+      navigationHistory.current = [];
       setWordCount(null);
       pendingTextCount.current = null;
       setPercentage(null);
@@ -1104,10 +1212,12 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               )
                 host.current.scrollTop = 0;
               previousSpine = loc.start.index;
-              latest.current.onProgress({
+              currentLocator.current = {
                 cfi: loc.start.cfi,
+                href: loc.start.href,
                 spineIndex: loc.start.index,
-              });
+              };
+              latest.current.onProgress(currentLocator.current);
               schedulePosition();
               void paint();
             });
@@ -1121,10 +1231,12 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             void b.loaded.navigation.then((nav: any) => {
               if (!disposed)
                 outline(
-                  nav.toc.map((x: any) => ({
-                    label: x.label,
-                    locator: { href: x.href },
-                  })),
+                  nav.toc.flatMap(function flatten(x: any): OutlineItem[] {
+                    return [
+                      { label: x.label, locator: { href: x.href } },
+                      ...(x.subitems || []).flatMap(flatten),
+                    ];
+                  }),
                 );
             });
             r.themes.fontSize(p.fontSize + "px");
@@ -1395,6 +1507,16 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         };
       }
     }, [text, doc.version.id]);
+    useEffect(() => {
+      if (!loading && !error && !needsPassword) latest.current.onReady?.();
+    }, [
+      loading,
+      error,
+      needsPassword,
+      doc.workspaceDocumentId,
+      doc.version.id,
+    ]);
+
     useEffect(() => {
       if (!host.current) return;
       const observer = new ResizeObserver(() => {
