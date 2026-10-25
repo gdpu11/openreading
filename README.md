@@ -1,8 +1,10 @@
 # Open Reading
 
+**Video explanations (first version):** Generate an illustrated guide from the reader toolbar with local Chinese narration, captions, chapter navigation and links back to the original. Preview the source excerpts before sending them to your configured model. Completed scripts are cached locally. See [usage and limitations](docs/video-guides.md).
+
 **Highlight a passage. Ask AI. Keep your thinking beside the text.**
 
-Open Reading is a local-first reader for **EPUB, PDF, Markdown and TXT**. Ask questions about a selected passage, follow up beside the original text, convert between PDF and EPUB, and keep books and notes on your own computer.
+Open Reading is a local-first reader for **EPUB, PDF, MOBI/AZW3, FB2, DOCX, HTML, RTF, CBZ/CBR, Markdown and TXT**. Ask questions about a selected passage, follow up beside the original text, convert between PDF and EPUB, and keep books and notes on your own computer.
 
 **MIT licensed · Preview software · English / 简体中文**
 
@@ -117,3 +119,5 @@ Bug reports and small, focused pull requests are welcome. See [CONTRIBUTING.md](
 Open Reading source code is licensed under [MIT](LICENSE). Dependencies retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `third-party/`.
 
 See the [compliance review and unresolved distribution items](docs/compliance-review.md) and [asset provenance](docs/asset-provenance.md). The Android scanner includes Google ML Kit with separate terms and metrics disclosures. Rebuilt clients include an offline `/licenses/index.html`; older release packages have not been retroactively updated by source changes.
+
+Supported extensions and format limitations: [Book formats](docs/book-formats.md).

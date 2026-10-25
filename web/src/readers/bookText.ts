@@ -1,3 +1,4 @@
+import { isEpubFormat } from "../formats";
 import { readContent, api } from "../api";
 import type { Prepared } from "./types";
 import { yieldWordCount } from "./wordCount";
@@ -100,9 +101,9 @@ export async function extractBookText(
       await task.destroy();
     }
   }
-  if (doc.format === "epub") {
+  if (isEpubFormat(doc.format)) {
     const { openEpub } = await import("./epub");
-    const epub = await openEpub(raw);
+    const epub = await openEpub(raw, doc.format);
     try {
       return await epub.textSections(signal, progress);
     } finally {

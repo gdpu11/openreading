@@ -54,6 +54,13 @@ def collect(name, version, folder, ecosystem):
         dest.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, dest / "ZLIB-NOTICE.txt")
         files.append(str((dest / "ZLIB-NOTICE.txt").relative_to(root)))
+    if ecosystem == "npm" and name == "node-unrar-js":
+        # The npm package omits the engine's license. Retain the exact text from
+        # upstream v2.0.2/UnRarDLL_Doc/license.txt, checked into our notice bundle.
+        notice = dest / "UNRAR-LICENSE.txt"
+        if not notice.exists():
+            raise SystemExit("Missing vendored UnRAR engine license")
+        files.append(str(notice.relative_to(root)))
     if ecosystem == "npm" and name == "pdfjs-dist":
         for subdir in ["cmaps", "standard_fonts", "wasm", "iccs"]:
             for p in (folder / subdir).iterdir():
@@ -82,6 +89,8 @@ for path, info in lock["packages"].items():
     package = json.loads((folder / "package.json").read_text())
     collect(package["name"], package["version"], folder, "npm")
     entries[-1]["license"] = package.get("license", "See notices")
+    if package["name"] == "node-unrar-js":
+        entries[-1]["license"] = "MIT (wrapper); UnRAR license (WASM engine)"
 
 env = dict(__import__("os").environ)
 env.pop("GOROOT", None)

@@ -1,6 +1,8 @@
+import { isEpubFormat, bookFileAccept } from "./formats";
 import { WorkspaceSearch } from "./library/WorkspaceSearch";
 import { NotesCenter } from "./learning/NotesCenter";
 import { BookTools } from "./readers/BookTools";
+import { VideoGuideButton } from "./video/VideoGuide";
 import { BackupSettings } from "./settings/BackupSettings";
 import { MCPSettings } from "./settings/MCPSettings";
 import { restoreCredentials } from "./settings/credentials";
@@ -772,7 +774,7 @@ function App() {
       (!pending.thread || pending.thread === activeThread)
     ) {
       pendingAssistant.current = null;
-      setRecipient("assistant");
+      setRecipient(pending.recipient || "assistant");
       setContextNoteIds(pending.noteIds || []);
       return body ? body + "\n\n" + pending.body : pending.body;
     }
@@ -957,6 +959,26 @@ function App() {
     });
   }, [doc, draftID, draft, selection, activeThread, reading.flush]);
   const selectedThread = threads.find((t) => t.threadId === activeThread);
+  const composeSelection = (
+    captured: Captured,
+    body: string,
+    target: "assistant" | "note" = "assistant",
+  ) => {
+    if (!doc) return;
+    if (activeThread || !draftReady)
+      pendingAssistant.current = {
+        member: doc.workspaceDocumentId,
+        body,
+        recipient: target,
+      };
+    else setDraft((draft) => (draft ? draft + "\n\n" + body : body));
+    setSelection(captured);
+    setActiveThread(null);
+    setComposing(true);
+    setRecipient(target);
+    setContextNoteIds([]);
+    setRightOpen(true);
+  };
   const annotationAnchor =
     selection?.anchor ||
     selectedThread?.resolutions?.find(
@@ -1894,7 +1916,7 @@ function App() {
                         <Maximize size={17} />
                       )}
                     </button>
-                    {(doc.format === "pdf" || doc.format === "epub") && (
+                    {(doc.format === "pdf" || isEpubFormat(doc.format)) && (
                       <select
                         aria-label={tr("页面布局")}
                         title={tr("双页在宽窗口中并排显示，窄窗口自动使用单页")}
@@ -1924,36 +1946,35 @@ function App() {
                           );
                         }}
                       >
-                        {doc.format === "epub" && (
+                        {isEpubFormat(doc.format) && (
                           <option value="scroll">{tr("章节滚动")}</option>
                         )}
                         <option value="single">{tr("单页")}</option>
                         <option value="double">{tr("一屏双页")}</option>
                       </select>
                     )}
+                    <VideoGuideButton
+                      doc={doc}
+                      reader={reader}
+                      workspaceId={workspace?.id || ""}
+                      providers={providers}
+                      model={model}
+                      encoding={prefs.encoding}
+                      onModel={setModel}
+                      onCompose={composeSelection}
+                    />
                     <BookTools
                       doc={doc}
                       reader={reader}
                       outline={outline}
                       encoding={prefs.encoding}
                       onError={setError}
-                      onAsk={(captured) => {
-                        const body = "请解释本节的核心观点，并结合原文举例。";
-                        if (activeThread || !draftReady)
-                          pendingAssistant.current = {
-                            member: doc.workspaceDocumentId,
-                            body,
-                          };
-                        else
-                          setDraft((draft) =>
-                            draft ? draft + "\n\n" + body : body,
-                          );
-                        setSelection(captured);
-                        setActiveThread(null);
-                        setComposing(true);
-                        setRecipient("assistant");
-                        setRightOpen(true);
-                      }}
+                      onAsk={(captured) =>
+                        composeSelection(
+                          captured,
+                          "请解释本节的核心观点，并结合原文举例。",
+                        )
+                      }
                     />
                     {doc.format === "pdf" && (
                       <>
@@ -2303,8 +2324,7 @@ function App() {
                   </div>
                 )}
                 <div className="welcome-formats">
-                  Markdown <span>·</span> TXT <span>·</span> PDF <span>·</span>{" "}
-                  EPUB <span>·</span>
+                  EPUB · PDF · MOBI · AZW3 · FB2 · DOCX · HTML · RTF · CBZ/CBR · Markdown · TXT <span>·</span>
                   {tr("ORD 学习包")}
                 </div>
                 <div className="welcome-foot">
@@ -2607,7 +2627,7 @@ function App() {
         ref={fileInput}
         type="file"
         multiple
-        accept=".md,.markdown,.txt,.pdf,.epub,.ord"
+        accept={bookFileAccept}
         hidden
         onChange={(e) => {
           void importFiles(e.target.files);

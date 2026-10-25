@@ -203,10 +203,11 @@ export async function epubToPdf(
   title: string,
   signal: AbortSignal,
   progress: (done: number, total: number) => void,
+  sourceFormat = "epub",
 ) {
   if (!window.openReadingDesktop)
     throw Error(tr("请在桌面端将 EPUB 转换为 PDF"));
-  const opened = await openEpub(raw);
+  const opened = await openEpub(raw, sourceFormat);
   try {
     const html = await opened.printHTML(title, signal, progress);
     signal.throwIfAborted();

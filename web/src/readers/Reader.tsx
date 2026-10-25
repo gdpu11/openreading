@@ -1,3 +1,4 @@
+import { readingFormat } from "../formats";
 import { clearEpubHighlights } from "./epubHighlights";
 import { tr } from "../i18n";
 import { BookWordCount } from "./BookWordCount";
@@ -13,6 +14,7 @@ import { usePdfZoom } from "./pdfZoom";
 import { createPortal } from "react-dom";
 import { SessionTimer } from "../reading/SessionTimer";
 import { ReadingProgress } from "../reading/ReadingProgress";
+import { findGuideExcerpt } from "../video/types";
 import type { ReadingEvent } from "../reading/data";
 import {
   forwardRef,
@@ -79,7 +81,9 @@ type Props = {
 };
 export const Reader = forwardRef<ReaderAdapter, Props>(
   function Reader(props, ref) {
-    const { doc, preferences: p } = props;
+    const { doc: sourceDoc, preferences: p } = props;
+    const doc = { ...sourceDoc, format: readingFormat(sourceDoc.format) };
+    const parserVersion = (sourceDoc.format === doc.format ? "" : `normalized-${sourceDoc.format}-v1:`) + PARSERS[doc.format as keyof typeof PARSERS];
     const host = useRef<HTMLDivElement>(null);
     const textRoot = useRef<HTMLElement | null>(null);
     const pendingTextCount = useRef<(() => void) | null>(null);
@@ -485,6 +489,8 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               ?.contentDocument?.body || textRoot.current
           : textRoot.current;
     const selectionRect = (range: Range): Captured["rect"] => {
+      if (!host.current || !range.startContainer.isConnected)
+        return { left: 0, top: 0, visible: false };
       const box = range.getBoundingClientRect();
       const frame = range.startContainer.ownerDocument?.defaultView
         ?.frameElement as HTMLElement | null;
@@ -586,7 +592,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       const response = await api("/artifacts", "POST", {
         workspaceDocumentId: doc.workspaceDocumentId,
         versionId: doc.version.id,
-        parserVersion: PARSERS[doc.format as keyof typeof PARSERS],
+        parserVersion: parserVersion,
         normalizationVersion: NORMALIZATION,
         blocks: [block],
       });
@@ -596,6 +602,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       async (
         override?: Range,
         element?: HTMLElement,
+        requireNativeSelection = true,
       ): Promise<Captured | null> => {
         let el =
           element || root() || (doc.format === "pdf" ? host.current : null);
@@ -662,6 +669,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         const snapshot = range.cloneRange();
         const data = await artifact(el, block, location);
         if (
+          !host.current?.isConnected ||
           latest.current.doc.version.id !== doc.version.id ||
           latest.current.doc.workspaceDocumentId !== doc.workspaceDocumentId
         )
@@ -677,7 +685,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           selectors,
           displayLocation: location,
           normalizationVersion: NORMALIZATION,
-          parserVersion: PARSERS[doc.format as keyof typeof PARSERS],
+          parserVersion: parserVersion,
         };
         const result: Captured = {
           anchor,
@@ -692,13 +700,15 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         };
         if (snapshot.toString() !== snap.quote.visible)
           throw Error("选区已变化，请重新选择");
-        // Capturing the artifact can outlive the native selection.
+        // Capturing the artifact can outlive the native selection. Explicit
+        // source excerpts instead rely on the immutable version and range above.
         const current = selection?.rangeCount ? selection.getRangeAt(0) : null;
         if (
-          !current ||
-          selection!.isCollapsed ||
-          current.compareBoundaryPoints(Range.START_TO_START, snapshot) !== 0 ||
-          current.compareBoundaryPoints(Range.END_TO_END, snapshot) !== 0
+          requireNativeSelection &&
+          (!current ||
+            selection!.isCollapsed ||
+            current.compareBoundaryPoints(Range.START_TO_START, snapshot) !== 0 ||
+            current.compareBoundaryPoints(Range.END_TO_END, snapshot) !== 0)
         )
           return null;
         captured.current = result;
@@ -958,6 +968,25 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         range.selectNodeContents(el);
         return makeSelection(range, el);
       },
+      async captureExcerpt(excerpt) {
+        for (let i = 0; i < 40; i++) {
+          const el = root();
+          if (el) {
+            const text = textMap(el).text;
+            const span = findGuideExcerpt(text, excerpt);
+            if (span) {
+              const range = rangeAt(
+                el,
+                cpOffset(text, span.start),
+                cpOffset(text, span.end),
+              );
+              if (range) return makeSelection(range, el, false);
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw Error("未能唯一定位讲解引用，请在原文中选择一段后提问或记笔记");
+      },
       async pageImage() {
         if (doc.format !== "pdf" || !pdf.current)
           throw Error("请打开 PDF 页面后使用 OCR");
@@ -1141,7 +1170,12 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               doc.workspaceDocumentId,
               abort.signal,
             );
-            const opened = await openEpub(raw);
+            const opened = await openEpub(raw, sourceDoc.format);
+            if (disposed) {
+              opened.dispose();
+              opened.book.destroy();
+              return;
+            }
             const b = opened.book;
             disposeEpub = opened.dispose;
             ownedBook = b;
@@ -1546,8 +1580,11 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
     };
     const pageNote = async () => {
       const el = root() || host.current!;
-      const block = doc.format === "pdf" ? `page-${page}` : "body";
-      const a = await artifact(el, block, { pageIndex: page });
+      const loc = doc.format === "epub" ? rendition.current?.currentLocation()?.start : null;
+      if (doc.format === "epub" && !loc?.cfi) return;
+      const block = doc.format === "pdf" ? `page-${page}` : doc.format === "epub" ? `spine-${loc.index}` : "body";
+      const location = loc ? { href: loc.href, label: `第 ${loc.index + 1} 节`, cfi: loc.cfi } : { pageIndex: page, label: `第 ${page + 1} 页` };
+      const a = await artifact(el, block, location);
       const anchor: Anchor = {
         schemaVersion: 1,
         workspaceDocumentId: doc.workspaceDocumentId,
@@ -1556,10 +1593,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         resourceManifestId: manifest,
         targetKind: "page",
         quote: { exact: "", visible: "", prefix: "", suffix: "" },
-        selectors: [],
-        displayLocation: { label: `第 ${page + 1} 页`, pageIndex: page },
+        selectors: loc ? [{ type: "epub", cfi: loc.cfi, href: loc.href }] : [],
+        displayLocation: location,
         normalizationVersion: NORMALIZATION,
-        parserVersion: PARSERS[doc.format as keyof typeof PARSERS],
+        parserVersion: parserVersion,
       };
       props.onSelect({
         anchor,

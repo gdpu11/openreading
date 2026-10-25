@@ -1,3 +1,4 @@
+import { isEpubFormat } from "../formats";
 import { useEffect, useRef, useState } from "react";
 import type { Captured, OutlineItem, Prepared, ReaderAdapter } from "./types";
 import { api, uid } from "../api";
@@ -217,6 +218,7 @@ export function BookTools({
       },
     ],
     ["speech", Volume2, "朗读", () => setPanel("speech")],
+    ...(isEpubFormat(doc.format) ? [["section-note", Bookmark, "本节笔记", () => reader.current?.addPageNote()] as [string, any, string, () => void]] : []),
     ...(doc.format === "pdf"
       ? ([["ocr", ScanText, "识别本页文字", () => setPanel("ocr")]] as [
           string,

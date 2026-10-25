@@ -65,8 +65,8 @@ func (s *Server) capture(root, relative string) (string, int64, error) {
 			_ = os.Remove(temp.Name())
 			continue
 		}
-		if format(relative) == "epub" {
-			if e = checkArchive(temp.Name()); e != nil {
+		{
+			if e = checkBookArchive(temp.Name(), format(relative)); e != nil {
 				os.Remove(temp.Name())
 				return "", 0, e
 			}
@@ -197,14 +197,7 @@ func (s *Server) versionRoutes() {
 		if e = exec(s.db, "INSERT INTO leases VALUES(?,?,?)", id(), v["id"], time.Now().Add(10*time.Minute).Unix()); e != nil {
 			return e
 		}
-		switch str(v, "format") {
-		case "pdf":
-			w.Header().Set("Content-Type", "application/pdf")
-		case "epub":
-			w.Header().Set("Content-Type", "application/epub+zip")
-		default:
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		}
+		w.Header().Set("Content-Type", bookContentType(str(v, "format")))
 		info, e := f.Stat()
 		if e != nil {
 			return e

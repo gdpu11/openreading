@@ -2,9 +2,11 @@
 
 **MCP 接入：** 在 **设置 → MCP 接入** 中连接 Codex、Cursor 等客户端，将 AI 写好的 Markdown / TXT 直接送进书库，后续更新保留旧版本与阅读笔记。[查看接入说明](docs/mcp.md#中文)。
 
+**视频解说（首版）：** 在阅读器工具栏生成带本地中文旁白、字幕和图解的导览，按章节播放，随时定位原文或带着问题继续讨论。生成前可预览发送范围，完成的讲稿缓存在本机。[使用与限制](docs/video-guides.md)。
+
 **读不懂，划一下，直接问 AI。**
 
-Open Reading 是以本地为主的阅读与笔记工具，支持 **EPUB、PDF、Markdown、TXT**。选中原文就能提问，围绕这段内容继续追问，让问题、原文和自己的理解留在一起；也支持 PDF / EPUB 互转，书籍与笔记保存在自己的电脑上。
+Open Reading 是以本地为主的阅读与笔记工具，支持 **EPUB、PDF、MOBI/AZW3、FB2、DOCX、HTML、RTF、CBZ/CBR、Markdown、TXT**。选中原文就能提问，围绕这段内容继续追问，让问题、原文和自己的理解留在一起；也支持 PDF / EPUB 互转，书籍与笔记保存在自己的电脑上。
 
 **MIT 开源 · 预览版 · 中英文界面**
 
@@ -56,3 +58,5 @@ macOS / Windows 使用 Electron；Android 使用 Capacitor。iOS 提供源码和
 公开仓库只包含自有生成的示例书籍，不包含个人书库、部署记录、密钥或本机测试截图。源码使用 [MIT 许可证](LICENSE)，依赖遵循各自许可证。
 
 安卓扫码依赖包含 Google ML Kit，存在独立条款和指标发送说明；不能把“本地优先”理解为所有 SDK 绝不联网。详见 [合规复核与未闭环事项](docs/compliance-review.md) 和 [素材来源记录](docs/asset-provenance.md)。修正后重新构建的客户端包含 `/licenses/index.html` 离线许可页；旧发布包不会随源码修改自动更新。
+
+文件扩展名、导入方式与格式边界：[书籍格式说明](docs/book-formats.md)。

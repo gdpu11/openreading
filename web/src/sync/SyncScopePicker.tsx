@@ -1,3 +1,4 @@
+import { bookFormats } from "../formats";
 import { useState } from "react";
 import { tr } from "../i18n";
 
@@ -13,7 +14,7 @@ export type SyncFile = {
   title: string;
   format: string;
 };
-const formats = ["pdf", "epub", "txt", "markdown"];
+const formats = bookFormats.map(([kind]) => kind);
 const formatName = (format: string) =>
   format === "markdown" ? "Markdown" : format.toUpperCase();
 export const validSelection = (value: SyncSelection) =>

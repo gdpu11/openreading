@@ -1,3 +1,4 @@
+import { isEpubFormat } from "../formats";
 import {
   useCallback,
   useEffect,
@@ -122,7 +123,7 @@ function BookContextMenu({
           icon: book.finishedAt ? BookOpen : BookCheck,
           checked: !!book.finishedAt,
         },
-        ...(book.format === "pdf" || book.format === "epub"
+        ...(book.format === "pdf" || isEpubFormat(book.format)
           ? [
               {
                 action: "convert" as const,

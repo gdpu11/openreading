@@ -1,3 +1,4 @@
+import { isEpubFormat } from "../formats";
 import { useEffect, useRef, useState } from "react";
 import { cachedBlob, coverCache } from "./storage";
 
@@ -24,9 +25,9 @@ export function MobileCover({ book }: { book: any }) {
             if (!blob) {
               const raw = await cachedBlob(book.version.contentHash);
               if (!raw || disposed) return;
-              if (book.format === "epub") {
+              if (isEpubFormat(book.format)) {
                 const { default: JSZip } = await import("jszip"),
-                  zip = await JSZip.loadAsync(await raw.arrayBuffer()),
+                  zip = await JSZip.loadAsync(await (await import("../readers/bookFormats")).normalizeBook(await raw.arrayBuffer(), book.format)),
                   parse = (text: string) =>
                     new DOMParser().parseFromString(text, "application/xml");
                 const container = zip.file("META-INF/container.xml");
@@ -45,7 +46,7 @@ export function MobileCover({ book }: { book: any }) {
                       (i.getAttribute("properties") || "")
                         .split(/\s+/)
                         .includes("cover-image"),
-                    ) || items.find((i) => i.getAttribute("id") === coverId);
+                    ) || items.find((i) => i.getAttribute("id") === coverId) || items.find(i => /^image\/(jpeg|png|webp|gif)$/.test(i.getAttribute("media-type") || ""));
                 if (item) {
                   const url = new URL(
                     item.getAttribute("href") || "",

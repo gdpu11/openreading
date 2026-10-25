@@ -147,7 +147,7 @@ func (s *Server) dispatch() {
 		return
 	}
 	s.mu.Lock()
-	if len(s.running) >= 2 {
+	if len(s.running)+len(s.videoJobs) >= 2 {
 		s.mu.Unlock()
 		return
 	}
@@ -158,7 +158,7 @@ func (s *Server) dispatch() {
 	}
 	for _, v := range queued {
 		s.mu.Lock()
-		if len(s.running) >= 2 {
+		if len(s.running)+len(s.videoJobs) >= 2 {
 			s.mu.Unlock()
 			return
 		}
@@ -176,6 +176,13 @@ func (s *Server) dispatch() {
 		}
 		ctx, cancel := context.WithCancel(s.ctx)
 		s.mu.Lock()
+		if len(s.running)+len(s.videoJobs) >= 2 {
+			s.mu.Unlock()
+			cancel()
+			// A video request can reserve the last slot while context is prepared.
+			_ = s.persist(str(v, "id"), "", "queued", "", "", nil)
+			return
+		}
 		s.running[str(v, "id")] = cancel
 		s.workers.Add(1)
 		s.mu.Unlock()

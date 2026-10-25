@@ -63,13 +63,12 @@ func (s *Server) validateSyncScope(q querier, b M) ([]any, M, error) {
 	case "all":
 	case "formats":
 		formats := arr(scope, "formats")
-		if len(formats) == 0 || len(formats) > 4 {
+		if len(formats) == 0 || len(formats) > 12 {
 			return invalid("请至少选择一种文件类型")
 		}
 		for _, f := range formats {
-			switch f {
-			case "pdf", "epub", "txt", "markdown":
-			default:
+			kind, ok := f.(string)
+			if !ok || !supportedFormat(kind) {
 				return invalid("文件类型无效")
 			}
 		}

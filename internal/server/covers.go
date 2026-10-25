@@ -26,7 +26,7 @@ func (s *Server) coverFile(member string) (*os.File, string, error) {
 		return nil, "", e
 	}
 	format := str(m, "format")
-	if format != "epub" && format != "pdf" {
+	if readingFormat(format) != "epub" && format != "pdf" {
 		return nil, "", problem(404, "COVER_UNAVAILABLE", "此文档没有封面", false)
 	}
 	entries, e := all(s.db, `SELECT e.relative_path,s.root FROM document_bindings b JOIN source_entries e ON e.id=b.source_entry_id JOIN sources s ON s.id=e.source_id WHERE b.workspace_document_id=? AND b.state='active' AND e.state='active' AND s.state='active' ORDER BY e.relative_path`, member)
@@ -289,8 +289,8 @@ func (s *Server) coverRoutes() {
 			w.WriteHeader(http.StatusNotModified)
 			return nil
 		}
-		if format == "pdf" {
-			w.Header().Set("Content-Type", "application/pdf")
+		if format != "epub" {
+			w.Header().Set("Content-Type", bookContentType(format))
 			http.ServeContent(w, r, "preview.pdf", info.ModTime(), f)
 			return nil
 		}

@@ -64,7 +64,7 @@ func ordName(title, kind string) string {
 	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
 		title = "book-" + title
 	}
-	ext := map[string]string{"markdown": ".md", "txt": ".txt", "pdf": ".pdf", "epub": ".epub"}[kind]
+	ext := map[string]string{"markdown": ".md", "txt": ".txt", "pdf": ".pdf", "epub": ".epub", "mobi": ".mobi", "azw3": ".azw3", "fb2": ".fb2", "docx": ".docx", "html": ".html", "rtf": ".rtf", "cbz": ".cbz", "cbr": ".cbr"}[kind]
 	if format(title) != kind {
 		title += ext
 	}
@@ -355,7 +355,7 @@ func (s *Server) readORD(path string) (*ordImport, error) {
 		return nil, ordInvalid("书籍数据格式无效")
 	}
 	b := &p.book
-	if !ordHex(b.DocumentID, 32) || !ordHex(b.MemberID, 32) || !ordHex(b.VersionID, 32) || !map[string]bool{"markdown": true, "txt": true, "pdf": true, "epub": true}[b.Format] || len(b.Title) > 1024 {
+	if !ordHex(b.DocumentID, 32) || !ordHex(b.MemberID, 32) || !ordHex(b.VersionID, 32) || !supportedFormat(b.Format) || len(b.Title) > 1024 {
 		return nil, ordInvalid("书籍信息无效")
 	}
 	allowed := map[string]bool{}
@@ -481,8 +481,8 @@ func (s *Server) readORD(path string) (*ordImport, error) {
 		if e != nil || st.Size() != int64(num(v, "size")) {
 			return nil, ordInvalid("原文大小与清单不一致")
 		}
-		if b.Format == "epub" {
-			if e = checkArchive(filepath.Join(p.dir, str(v, "content_hash"))); e != nil {
+		{
+			if e = checkBookArchive(filepath.Join(p.dir, str(v, "content_hash")), b.Format); e != nil {
 				return nil, e
 			}
 		}

@@ -38,7 +38,16 @@ func (s *Server) validateAnchor(q querier, member, version string, a M) error {
 	}
 	kind := str(a, "targetKind")
 	if kind == "page" {
-		if str(v, "format") != "pdf" || str(obj(a, "quote"), "exact") != "" || num(obj(a, "displayLocation"), "pageIndex") < 0 {
+		valid := str(v, "format") == "pdf" && num(obj(a, "displayLocation"), "pageIndex") >= 0
+		if readingFormat(str(v, "format")) == "epub" {
+			for _, raw := range arr(a, "selectors") {
+				sel, _ := raw.(map[string]any)
+				if str(sel, "type") == "epub" && strings.HasPrefix(str(sel, "cfi"), "epubcfi(") && len(str(sel, "cfi")) <= 10000 {
+					valid = true
+				}
+			}
+		}
+		if !valid || str(obj(a, "quote"), "exact") != "" {
 			return problem(400, "INVALID_ANCHOR", "页级笔记定位不合法", false)
 		}
 		return nil
@@ -96,7 +105,7 @@ func (s *Server) validateAnchor(q querier, member, version string, a M) error {
 			}
 			native = true
 		case "epub":
-			if str(v, "format") != "epub" || !strings.HasPrefix(str(sel, "cfi"), "epubcfi(") || len(str(sel, "cfi")) > 10000 {
+			if readingFormat(str(v, "format")) != "epub" || !strings.HasPrefix(str(sel, "cfi"), "epubcfi(") || len(str(sel, "cfi")) > 10000 {
 				return problem(400, "INVALID_ANCHOR", "EPUB CFI 无效", false)
 			}
 			native = true
@@ -104,7 +113,7 @@ func (s *Server) validateAnchor(q querier, member, version string, a M) error {
 			return problem(400, "INVALID_ANCHOR", "未知定位器", false)
 		}
 	}
-	if !found || ((str(v, "format") == "pdf" || str(v, "format") == "epub") && !native) {
+	if !found || ((str(v, "format") == "pdf" || readingFormat(str(v, "format")) == "epub") && !native) {
 		return problem(400, "INVALID_ANCHOR", "选区缺少必要定位数据", false)
 	}
 	return nil

@@ -29,7 +29,11 @@ const localPath = (value: string, base: string) => {
 
 // Keep the ZIP open once. Only sanitize requested chapters and decode resources
 // for a displayed chapter; full-book text indexing never decompresses its images.
-export async function openEpub(raw: ArrayBuffer) {
+export async function openEpub(raw: ArrayBuffer, sourceFormat = "epub") {
+  if (sourceFormat !== "epub") {
+    const { normalizeBook } = await import("./bookFormats");
+    raw = await normalizeBook(raw, sourceFormat);
+  }
   const zip = await JSZip.loadAsync(raw);
   let disposed = false;
   const urls = new Set<string>();
@@ -193,7 +197,8 @@ export async function openEpub(raw: ArrayBuffer) {
               .forEach((el) => {
                 el.removeAttribute("style");
                 for (const attr of ["href", "xlink:href"])
-                  if (!(el.getAttribute(attr) || "#").startsWith("#"))
+                  if (!(el.getAttribute(attr) || "#").startsWith("#") &&
+                    !/^data:image\/(?:jpeg|png|gif|webp|bmp)[;,]/i.test(el.getAttribute(attr) || ""))
                     el.removeAttribute(attr);
               });
             blob = new Blob([serializer.serializeToString(svg)], { type });

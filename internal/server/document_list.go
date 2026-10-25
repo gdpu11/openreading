@@ -55,9 +55,7 @@ func (s *Server) listDocuments(r *http.Request) ([]M, string, error) {
 		return nil, "", problem(400, "INVALID_BOOK_FILTER", "书库筛选方式无效", false)
 	}
 	if format := r.URL.Query().Get("format"); format != "" && format != "all" {
-		switch format {
-		case "pdf", "epub", "txt", "markdown":
-		default:
+		if !supportedFormat(format) {
 			return nil, "", problem(400, "INVALID_FORMAT", "文件类型无效", false)
 		}
 		q += " AND d.format=?"

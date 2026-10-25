@@ -1,14 +1,9 @@
+import { bookFormats, type BookFormat } from "../formats";
 import { Check, ChevronDown, Filter } from "lucide-react";
 import { tr } from "../i18n";
 import { HoverDetails } from "./HoverDetails";
-export type DocumentFormat = "all" | "epub" | "pdf" | "txt" | "markdown";
-const formats = [
-  ["all", "全部格式"],
-  ["epub", "EPUB"],
-  ["pdf", "PDF"],
-  ["txt", "TXT"],
-  ["markdown", "Markdown"],
-] as const;
+export type DocumentFormat = "all" | BookFormat;
+const formats = [["all", "全部格式"], ...bookFormats] as const;
 export function DocumentFormatFilter({
   value,
   onChange,

@@ -81,6 +81,24 @@
     "license": "ISC"
   },
   {
+    "name": "@lingo-reader/mobi-parser",
+    "version": "0.4.6",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/_lingo-reader_mobi-parser/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
+    "name": "@lingo-reader/shared",
+    "version": "0.4.6",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/_lingo-reader_shared/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
     "name": "@napi-rs/canvas",
     "version": "1.0.11",
     "ecosystem": "npm",
@@ -245,6 +263,15 @@
     "license": "MIT"
   },
   {
+    "name": "base64-js",
+    "version": "1.5.1",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/base64-js/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
     "name": "camelcase",
     "version": "5.3.1",
     "ecosystem": "npm",
@@ -306,6 +333,15 @@
       "third-party/npm/cliui/LICENSE.txt"
     ],
     "license": "ISC"
+  },
+  {
+    "name": "codepage",
+    "version": "1.15.0",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/codepage/LICENSE"
+    ],
+    "license": "Apache-2.0"
   },
   {
     "name": "color-convert",
@@ -434,6 +470,15 @@
     "license": "MIT"
   },
   {
+    "name": "dingbat-to-unicode",
+    "version": "1.0.2",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/dingbat-to-unicode/LICENSE"
+    ],
+    "license": "BSD-2-Clause"
+  },
+  {
     "name": "dompurify",
     "version": "3.4.17",
     "ecosystem": "npm",
@@ -442,6 +487,15 @@
       "third-party/npm/dompurify/LICENSE-MPL"
     ],
     "license": "(MPL-2.0 OR Apache-2.0)"
+  },
+  {
+    "name": "duck",
+    "version": "0.1.12",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/duck/LICENSE"
+    ],
+    "license": "BSD"
   },
   {
     "name": "emoji-regex",
@@ -534,6 +588,15 @@
     "license": "MIT"
   },
   {
+    "name": "events",
+    "version": "3.3.0",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/events/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
     "name": "ext",
     "version": "1.7.0",
     "ecosystem": "npm",
@@ -548,6 +611,15 @@
     "ecosystem": "npm",
     "notices": [
       "third-party/npm/extend/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
+    "name": "fflate",
+    "version": "0.8.3",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/fflate/LICENSE"
     ],
     "license": "MIT"
   },
@@ -843,6 +915,15 @@
     "license": "MIT"
   },
   {
+    "name": "lop",
+    "version": "0.4.2",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/lop/LICENSE"
+    ],
+    "license": "BSD-2-Clause"
+  },
+  {
     "name": "lucide-react",
     "version": "1.59.0",
     "ecosystem": "npm",
@@ -850,6 +931,33 @@
       "third-party/npm/lucide-react/LICENSE"
     ],
     "license": "ISC"
+  },
+  {
+    "name": "mammoth",
+    "version": "1.13.0",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/mammoth/LICENSE"
+    ],
+    "license": "BSD-2-Clause"
+  },
+  {
+    "name": "argparse",
+    "version": "1.0.10",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/argparse/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
+    "name": "xmlbuilder",
+    "version": "10.1.1",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/xmlbuilder/LICENSE"
+    ],
+    "license": "MIT"
   },
   {
     "name": "markdown-table",
@@ -1303,6 +1411,25 @@
     "license": "ISC"
   },
   {
+    "name": "node-unrar-js",
+    "version": "2.0.2",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/node-unrar-js/LICENSE.md",
+      "third-party/npm/node-unrar-js/UNRAR-LICENSE.txt"
+    ],
+    "license": "MIT (wrapper); UnRAR license (WASM engine)"
+  },
+  {
+    "name": "option",
+    "version": "0.2.4",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/option/LICENSE"
+    ],
+    "license": "BSD-2-Clause"
+  },
+  {
     "name": "p-limit",
     "version": "2.3.0",
     "ecosystem": "npm",
@@ -1363,6 +1490,15 @@
     "ecosystem": "npm",
     "notices": [
       "third-party/npm/parse5/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
+    "name": "path-browserify",
+    "version": "1.0.1",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/path-browserify/LICENSE"
     ],
     "license": "MIT"
   },
@@ -1548,6 +1684,15 @@
     "license": "ISC"
   },
   {
+    "name": "rtf.js",
+    "version": "3.0.9",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/rtf.js/LICENSE"
+    ],
+    "license": "MIT"
+  },
+  {
     "name": "safe-buffer",
     "version": "5.1.2",
     "ecosystem": "npm",
@@ -1555,6 +1700,15 @@
       "third-party/npm/safe-buffer/LICENSE"
     ],
     "license": "MIT"
+  },
+  {
+    "name": "sax",
+    "version": "1.6.1",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/sax/LICENSE.md"
+    ],
+    "license": "BlueOak-1.0.0"
   },
   {
     "name": "scheduler",
@@ -1591,6 +1745,15 @@
       "third-party/npm/space-separated-tokens/license"
     ],
     "license": "MIT"
+  },
+  {
+    "name": "sprintf-js",
+    "version": "1.0.3",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/sprintf-js/LICENSE"
+    ],
+    "license": "BSD-3-Clause"
   },
   {
     "name": "string_decoder",
@@ -1672,6 +1835,15 @@
       "third-party/npm/type/LICENSE"
     ],
     "license": "ISC"
+  },
+  {
+    "name": "underscore",
+    "version": "1.13.8",
+    "ecosystem": "npm",
+    "notices": [
+      "third-party/npm/underscore/LICENSE"
+    ],
+    "license": "MIT"
   },
   {
     "name": "unified",

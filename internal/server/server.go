@@ -68,6 +68,7 @@ type Server struct {
 	scans          map[string]*ScanJob
 	restores       map[string]*restorePlan
 	running        map[string]context.CancelFunc
+	videoJobs      map[string]videoGuideJob
 	ctx            context.Context
 	cancel         context.CancelFunc
 	workers        sync.WaitGroup
@@ -141,7 +142,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	_ = os.Chmod(filepath.Join(abs, "library.sqlite"), 0600)
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{db: db, cfg: cfg, mux: http.NewServeMux(), pairCode: id(), sessions: map[string]session{}, pickers: map[string]time.Time{}, credentials: map[string]credential{}, scans: map[string]*ScanJob{}, restores: map[string]*restorePlan{}, running: map[string]context.CancelFunc{}, ctx: ctx, cancel: cancel}
+	s := &Server{db: db, cfg: cfg, mux: http.NewServeMux(), pairCode: id(), sessions: map[string]session{}, pickers: map[string]time.Time{}, credentials: map[string]credential{}, scans: map[string]*ScanJob{}, restores: map[string]*restorePlan{}, running: map[string]context.CancelFunc{}, videoJobs: map[string]videoGuideJob{}, ctx: ctx, cancel: cancel}
 	if cfg.PublicOrigin != "" {
 		s.pairCode = cfg.AccessCode
 	}
@@ -207,7 +208,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; frame-src 'self' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; frame-src 'self' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 	host, _, e := net.SplitHostPort(r.Host)
 	if e != nil {
 		host = r.Host
@@ -371,6 +372,7 @@ func (s *Server) routes() {
 	s.articleRoutes()
 	s.backupPolicyRoutes()
 	s.mcpRoutes()
+	s.videoGuideRoutes()
 	public, _ := fs.Sub(assets, "static")
 	fileServer := http.FileServer(http.FS(public))
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

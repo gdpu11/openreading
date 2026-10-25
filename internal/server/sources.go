@@ -19,19 +19,6 @@ const maxFileSize int64 = 200 << 20
 
 var ignored = map[string]bool{".git": true, "node_modules": true, "vendor": true, ".svn": true, ".hg": true, ".idea": true, ".DS_Store": true}
 
-func format(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".md", ".markdown":
-		return "markdown"
-	case ".txt":
-		return "txt"
-	case ".pdf":
-		return "pdf"
-	case ".epub":
-		return "epub"
-	}
-	return ""
-}
 func within(root, path string) bool {
 	rel, e := filepath.Rel(root, path)
 	return e == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
@@ -467,10 +454,11 @@ func (s *Server) sourceRoutes() {
 	})
 	s.route("POST /api/workspaces/{w}/imports", s.importFiles)
 }
-func checkArchive(path string) error {
+func checkArchive(path string) error { return checkArchiveKind(path, "epub") }
+func checkArchiveKind(path, kind string) error {
 	z, e := zip.OpenReader(path)
 	if e != nil {
-		return problem(400, "INVALID_ARCHIVE", "EPUB 压缩包损坏", false)
+		return problem(400, "INVALID_ARCHIVE", "书籍压缩包损坏", false)
 	}
 	defer z.Close()
 	if len(z.File) > 5000 {
@@ -498,8 +486,22 @@ func checkArchive(path string) error {
 			return problem(400, "INVALID_ARCHIVE", "压缩包展开大小或压缩比超限", false)
 		}
 	}
-	if !names["META-INF/container.xml"] {
-		return problem(400, "INVALID_ARCHIVE", "缺少 EPUB 容器信息", false)
+	valid := false
+	switch kind {
+	case "epub":
+		valid = names["META-INF/container.xml"]
+	case "docx":
+		valid = names["[Content_Types].xml"] && names["word/document.xml"]
+	case "fb2", "cbz":
+		for name := range names {
+			ext := strings.ToLower(filepath.Ext(name))
+			if kind == "fb2" && ext == ".fb2" || kind == "cbz" && (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" || ext == ".bmp") {
+				valid = true
+			}
+		}
+	}
+	if !valid {
+		return problem(400, "INVALID_ARCHIVE", "缺少书籍必需的目录或内容", false)
 	}
 	return nil
 }
@@ -551,8 +553,8 @@ func (s *Server) importFiles(w http.ResponseWriter, r *http.Request) error {
 			_ = out.Close()
 		}
 		_ = src.Close()
-		if err == nil && format(name) == "epub" {
-			err = checkArchive(dest)
+		if err == nil {
+			err = checkBookArchive(dest, format(name))
 		}
 		if err != nil {
 			_ = os.Remove(dest)

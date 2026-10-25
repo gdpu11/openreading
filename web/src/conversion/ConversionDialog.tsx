@@ -21,7 +21,7 @@ export function ConversionDialog({
   const target = book.format === "pdf" ? "epub" : "pdf";
   const title = (
     book.bindings[0]?.relativePath?.split("/").pop() || "Book"
-  ).replace(/\.(pdf|epub)$/i, "");
+  ).replace(/\.(pdf|epub|mobi|azw3|azw|prc|kf8|fb2|fbz|docx|html|htm|xhtml|rtf|cbz|cbr)$/i, "");
   const [mode, setMode] = useState<PdfEpubMode>("images"),
     [add, setAdd] = useState(true),
     [busy, setBusy] = useState(false),
@@ -118,7 +118,7 @@ export function ConversionDialog({
                         controller.signal,
                         progress,
                       )
-                    : await epubToPdf(raw, title, controller.signal, progress),
+                    : await epubToPdf(raw, title, controller.signal, progress, book.format),
                 );
                 controller.signal.throwIfAborted();
                 setStatus(tr("正在保存转换文件…"));

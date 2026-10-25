@@ -59,6 +59,7 @@ export interface ReaderAdapter {
   navigateLocation: (locator: any) => Promise<void>;
   sectionText: () => string;
   captureSection: () => Promise<Captured | null>;
+  captureExcerpt: (text: string) => Promise<Captured | null>;
   pageImage: () => Promise<string>;
   dispose?: () => void;
 }

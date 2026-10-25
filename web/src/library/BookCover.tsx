@@ -1,3 +1,4 @@
+import { isEpubFormat } from "../formats";
 import { useEffect, useRef, useState } from "react";
 import { BookOpen } from "lucide-react";
 import { api, localDraft } from "../api";
@@ -50,7 +51,9 @@ async function renderCover(
     } else {
       const response = await fetch(url, { signal });
       if (!response.ok) return null;
-      const bitmap = await createImageBitmap(await response.blob());
+      const blob = format !== "epub" && isEpubFormat(format) ? await (await import("../readers/bookFormats")).normalizedCover(await response.arrayBuffer(), format) : await response.blob();
+      if (!blob) return null;
+      const bitmap = await createImageBitmap(blob);
       try {
         const scale = Math.min(1, 320 / bitmap.width, 440 / bitmap.height);
         canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -105,7 +108,7 @@ export function BookCover({ book, title }: { book: any; title: string }) {
             if (cached.blob) show(cached.blob);
             return;
           }
-          if (!["epub", "pdf"].includes(book.format)) return;
+          if (!isEpubFormat(book.format) && book.format !== "pdf") return;
           await thumbnail(async () => {
             if (controller.signal.aborted) return null;
             const cachePath =
@@ -167,7 +170,7 @@ export function BookCover({ book, title }: { book: any; title: string }) {
       ) : (
         <>
           <BookOpen size={26} strokeWidth={1.25} />
-          <p>{title.replace(/\.(epub|pdf|md|txt|markdown)$/i, "")}</p>
+          <p>{title.replace(/\.(epub|kepub|pdf|md|txt|markdown|mobi|azw|prc|azw3|kf8|fb2|fbz|docx|html|htm|xhtml|rtf|cbz|cbr)$/i, "")}</p>
           <span>{book.format.toUpperCase()}</span>
         </>
       )}
