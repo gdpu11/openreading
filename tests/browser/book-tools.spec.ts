@@ -15,7 +15,9 @@ import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 
 test.use({ trace: "off", screenshot: "off" });
-test("Native book conversion, original deletion, format filtering and reading estimates", async () => {
+test("Native book conversion, original deletion, format filtering and reading estimates", async ({
+  browser,
+}) => {
   test.skip(process.platform !== "darwin");
   test.setTimeout(180000);
   const dir = await mkdtemp(join(tmpdir(), "openreading-book-tools-"));
@@ -94,14 +96,140 @@ test("Native book conversion, original deletion, format filtering and reading es
     const card = (name: string) =>
       library.locator(".library-book").filter({ hasText: name });
     await expect(library.locator(".library-book")).toHaveCount(5);
-    const format = library.getByLabel("文件类型", { exact: true });
-    await format.selectOption("epub");
+    const tools = library.locator(".library-tools");
+    expect(
+      await tools
+        .locator(":scope > *")
+        .evaluateAll((items: Element[]) =>
+          items.map((item) =>
+            item.tagName === "BUTTON"
+              ? item.getAttribute("title")
+              : item.querySelector("summary")?.getAttribute("aria-label") ||
+                item.querySelector("summary")?.textContent?.trim(),
+          ),
+        ),
+    ).toEqual(["刷新来源", "来源 1", "文件排序", "文件类型"]);
+
+    let scans = 0;
+    library.on("request", (request: any) => {
+      if (
+        request.method() === "POST" &&
+        /\/sources\/[^/]+\/scan$/.test(request.url())
+      )
+        scans++;
+    });
+    const refresh = tools.getByTitle("刷新来源", { exact: true });
+    await refresh.hover();
+    expect(scans).toBe(0);
+    const scanned = library.waitForRequest(
+      (request: any) =>
+        request.method() === "POST" &&
+        /\/sources\/[^/]+\/scan$/.test(request.url()),
+    );
+    await refresh.click();
+    await scanned;
+    await expect(refresh).toBeEnabled();
+
+    const hoverPanel = async (trigger: any, panel: any) => {
+      await trigger.hover();
+      await expect(panel).toBeVisible();
+      await trigger.click();
+      await expect(panel).toBeVisible();
+      const box = await trigger.boundingBox();
+      await library.mouse.move(box.x + box.width / 2, box.y + box.height + 4, {
+        steps: 4,
+      });
+      await expect(panel).toBeVisible();
+      await panel.hover();
+      await expect(panel).toBeVisible();
+      await library.mouse.move(0, 0);
+      await expect(panel).toBeHidden();
+    };
+    await hoverPanel(
+      tools.locator(".library-sources summary"),
+      tools.locator(".library-sources-panel"),
+    );
+    const sort = library.getByLabel("文件排序", { exact: true });
+    await hoverPanel(
+      sort,
+      library.getByRole("menu", { name: "文件排序方式", exact: true }),
+    );
+    const formatTrigger = tools.locator(".document-format-filter summary");
+    const formatPanel = library.getByRole("menu", {
+      name: "筛选文件类型",
+      exact: true,
+    });
+    await hoverPanel(formatTrigger, formatPanel);
+    await formatTrigger.focus();
+    await formatTrigger.press("ArrowDown");
+    await expect(
+      library.getByRole("menuitemradio", { name: "全部格式", exact: true }),
+    ).toBeFocused();
+    await library.keyboard.press("End");
+    await expect(
+      library.getByRole("menuitemradio", { name: "Markdown", exact: true }),
+    ).toBeFocused();
+    await library.keyboard.press("Home");
+    await library.keyboard.press("Escape");
+    await expect(formatPanel).toBeHidden();
+    await expect(formatTrigger).toBeFocused();
+    await formatTrigger.press("Enter");
+    await expect(formatPanel).toBeVisible();
+    await formatTrigger.press("Shift+Tab");
+    await expect(formatPanel).toBeHidden();
+
+    const touch = await browser.newContext({
+      hasTouch: true,
+      viewport: { width: 1200, height: 900 },
+      storageState: await library.context().storageState(),
+    });
+    try {
+      await touch.addInitScript(() => {
+        (window as any).openReadingDesktop = {
+          readerTarget: null,
+          setLanguage() {},
+          onThread() {
+            return () => {};
+          },
+          onClosing() {
+            return () => {};
+          },
+        };
+      });
+      const page = await touch.newPage();
+      await page.goto(library.url());
+      const trigger = page.locator(".document-format-filter summary");
+      await trigger.tap();
+      await expect(
+        page.getByRole("menu", { name: "筛选文件类型", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("menuitemradio", { name: "PDF", exact: true }).tap();
+      await expect(page.locator(".library-book")).toHaveCount(1);
+      await expect(trigger).toContainText("PDF");
+      await trigger.tap();
+      await page.getByRole("heading", { name: "书库", exact: true }).tap();
+      await expect(
+        page.getByRole("menu", { name: "筛选文件类型", exact: true }),
+      ).toBeHidden();
+    } finally {
+      await touch.close();
+    }
+    await sort.hover();
+    await library.screenshot({
+      path: join(evidence, "library-toolbar-hover.png"),
+    });
+    await library.mouse.move(0, 0);
+    const format = async (name: string) => {
+      await library.locator(".document-format-filter summary").hover();
+      await library.getByRole("menuitemradio", { name, exact: true }).click();
+    };
+    await format("EPUB");
     await expect(library.locator(".library-book")).toHaveCount(1);
-    await format.selectOption("pdf");
+    await format("PDF");
     await expect(library.locator(".library-book")).toHaveCount(1);
-    await format.selectOption("txt");
+    await format("TXT");
     await expect(library.locator(".library-book")).toHaveCount(3);
-    await format.selectOption("all");
+    await format("全部格式");
     let opening = app.waitForEvent("window");
     await card("Estimate.txt").click();
     let book = await opening;

@@ -19,6 +19,7 @@ import { BookFilters } from "./BookFilters";
 import { BookCover } from "./BookCover";
 import type { BookFilter } from "./BookContextMenu";
 import { DocumentSort } from "./DocumentSort";
+import { HoverDetails } from "./HoverDetails";
 export function LibraryShelf({
   books,
   cursor,
@@ -83,25 +84,6 @@ export function LibraryShelf({
           />
         </label>
         <div className="library-tools">
-          <details
-            className="library-sources"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") e.currentTarget.open = false;
-            }}
-          >
-            <summary>
-              <Folder size={16} />
-              {tr("来源")} <span>{sourceCount}</span>
-            </summary>
-            <div className="library-sources-panel">
-              <h3>{tr("已连接来源")}</h3>
-              {sourceManager}
-              <button className="secondary" onClick={addSource}>
-                <FolderPlus size={15} />
-                {tr("添加文件夹")}
-              </button>
-            </div>
-          </details>
           <button
             title={tr("刷新来源")}
             disabled={refreshing}
@@ -117,6 +99,20 @@ export function LibraryShelf({
             <RefreshCw size={16} className={refreshing ? "spinning" : ""} />
             <span>{tr("刷新")}</span>
           </button>
+          <HoverDetails className="library-sources">
+            <summary>
+              <Folder size={16} />
+              {tr("来源")} <span>{sourceCount}</span>
+            </summary>
+            <div className="library-sources-panel">
+              <h3>{tr("已连接来源")}</h3>
+              {sourceManager}
+              <button className="secondary" onClick={addSource}>
+                <FolderPlus size={15} />
+                {tr("添加文件夹")}
+              </button>
+            </div>
+          </HoverDetails>
           <DocumentSort value={sort} onChange={onSort} />
           <DocumentFormatFilter value={format} onChange={onFormat} />
         </div>

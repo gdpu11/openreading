@@ -425,6 +425,15 @@ small {
 .file-sort-menu button[aria-checked="true"] {
   background: var(--pale);
 }
+.file-sort-menu::before,
+.library-sources-panel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  height: 8px;
+}
 .sources {
   padding: 0 14px 13px;
   border-bottom: 1px solid var(--line);
@@ -2577,16 +2586,16 @@ small {
   font-size: 12px;
   flex-shrink: 0;
 }
-.document-format-filter select {
-  width: auto;
-  max-width: 120px;
-  height: 32px;
-  min-height: 0;
-  padding: 4px 22px 4px 6px;
+.document-format-filter summary {
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  font-size: 12px;
   background-color: var(--surface);
+}
+.document-format-filter .file-sort-menu {
+  min-width: 138px;
 }
 .source-actions {
   flex-wrap: wrap;

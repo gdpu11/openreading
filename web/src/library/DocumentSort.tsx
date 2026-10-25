@@ -1,6 +1,7 @@
 import { ArrowDownWideNarrow, Check } from "lucide-react";
 import { tr } from "../i18n";
 import type { ReaderPreferences } from "../readers/types";
+import { HoverDetails } from "./HoverDetails";
 export function DocumentSort({
   value,
   onChange,
@@ -9,20 +10,12 @@ export function DocumentSort({
   onChange: (value: ReaderPreferences["documentSort"]) => void;
 }) {
   return (
-    <details
-      className="file-sort"
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
-          e.currentTarget.open = false;
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.currentTarget.open = false;
-          e.currentTarget.querySelector("summary")?.focus();
-        }
-      }}
-    >
-      <summary aria-label={tr("文件排序")} title={tr("文件排序")}>
+    <HoverDetails className="file-sort">
+      <summary
+        aria-label={tr("文件排序")}
+        title={tr("文件排序")}
+        aria-haspopup="menu"
+      >
         <ArrowDownWideNarrow size={16} />
       </summary>
       <div
@@ -45,7 +38,9 @@ export function DocumentSort({
             aria-checked={(value || "default") === key}
             onClick={(e) => {
               onChange(key);
-              e.currentTarget.closest("details")!.open = false;
+              const details = e.currentTarget.closest("details")!;
+              details.open = false;
+              details.querySelector("summary")?.focus();
             }}
           >
             <Check
@@ -58,6 +53,6 @@ export function DocumentSort({
           </button>
         ))}
       </div>
-    </details>
+    </HoverDetails>
   );
 }
