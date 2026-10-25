@@ -69,7 +69,7 @@ func (s *Server) searchRoutes() {
 			sql += " AND ss.version_id=?"
 			args = append(args, version)
 		} else {
-			sql += " AND ss.version_id=(SELECT id FROM versions WHERE document_id=wd.document_id ORDER BY created_at DESC,id LIMIT 1)"
+			sql += " AND ss.version_id=COALESCE((SELECT version_id FROM mcp_documents WHERE workspace_document_id=wd.id),(SELECT id FROM versions WHERE document_id=wd.document_id ORDER BY created_at DESC,id LIMIT 1))"
 		}
 		sql += " ORDER BY wd.id,ss.position LIMIT 101 OFFSET ?"
 		args = append(args, offset)

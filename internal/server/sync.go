@@ -279,7 +279,7 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 				delete(m, "workspaceId")
 				visible = append(visible, m)
 				entry, e := one(tx, "SELECT e.id,e.relative_path,s.root,s.kind FROM source_entries e JOIN sources s ON s.id=e.source_id JOIN document_bindings b ON b.source_entry_id=e.id WHERE b.workspace_document_id=? AND e.state='active' AND s.state='active' AND b.state='active' ORDER BY e.relative_path LIMIT 1", m["id"])
-				versions, e2 := all(tx, "SELECT id,content_hash,size,created_at FROM versions WHERE document_id=? ORDER BY created_at DESC,id", m["documentId"])
+				versions, e2 := all(tx, "SELECT id,content_hash,size,created_at FROM versions WHERE document_id=? ORDER BY (id=COALESCE((SELECT version_id FROM mcp_documents WHERE workspace_document_id=?),'')) DESC,created_at DESC,id", m["documentId"], m["id"])
 				if e2 != nil {
 					return e2
 				}

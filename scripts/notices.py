@@ -19,7 +19,7 @@ def collect(name, version, folder, ecosystem):
     dest = out / ecosystem / re.sub(r"[^A-Za-z0-9._-]", "_", name)
     files = []
     for p in folder.iterdir():
-        if p.is_file() and re.match(r"^(licen[sc]e|copying|notice|patents|copyright)([._-].*)?$", p.name, re.I):
+        if p.is_file() and p.suffix != ".go" and re.match(r"^(licen[sc]e|copying|notice|patents|copyright)([._-].*)?$", p.name, re.I):
             dest.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(p, dest / p.name)
             files.append(str((dest / p.name).relative_to(root)))

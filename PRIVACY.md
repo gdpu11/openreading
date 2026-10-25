@@ -15,6 +15,22 @@ conversations and personal notes; share only content you are entitled to share.
 工作区的文件与学习记录；手机保留离线副本和待同步草稿。撤销设备授权不等于
 远程删除已经下载到设备的数据。移出书库也不等于清除历史快照、笔记和备份。
 
+## MCP document delivery / MCP 文档投递
+
+MCP is off by default and is available only in the local library. When enabled,
+the bearer-authenticated listener accepts connections only on the same computer.
+Connected AI clients can list, read and update documents delivered through MCP
+in the workspace selected in settings. Other books, reading notes and model
+credentials are not exposed by these tools. Your AI client may send delivered
+text to its model provider according to that client's configuration. MCP keys
+are stored only as hashes in a private local configuration file and are excluded
+from backups and synchronization.
+
+MCP 默认关闭，仅在本机书库提供。开启后，AI 客户端凭连接密钥访问所选工作区
+中经 MCP 投递的文档；工具不会提供其他书籍、阅读笔记或模型凭据。AI 客户端
+可能按其自身设置将读取的文本发送给模型服务。连接密钥只以哈希形式保存在
+私有本机配置文件中，不进入备份或同步。
+
 ## Optional AI / 可选 AI
 
 When you send an AI question, the configured provider receives the selected

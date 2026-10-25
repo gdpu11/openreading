@@ -110,6 +110,14 @@ type fileMeta struct {
 }
 
 func (s *Server) scan(ctx context.Context, j *ScanJob, src M) {
+	// MCP publishes its source, snapshot and membership in one transaction.
+	// A folder scan must not republish metadata from a previous source root.
+	if str(src, "kind") == "mcp" {
+		j.mu.Lock()
+		j.State = "completed"
+		j.mu.Unlock()
+		return
+	}
 	root := str(src, "root")
 	files := []fileMeta{}
 	ign := map[string]bool{}

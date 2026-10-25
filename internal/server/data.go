@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "library_books", "note_learning", "book_preferences", "bookmarks", "recognized_pages"}
+var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "library_books", "note_learning", "book_preferences", "bookmarks", "recognized_pages", "mcp_documents"}
 
 type backupManifest struct {
 	SchemaVersion     int               `json:"schemaVersion"`
@@ -94,7 +94,7 @@ func rawQuery(q querier, query string, args ...any) ([]M, error) {
 }
 func (s *Server) protected(q querier) (map[string]bool, error) {
 	hashes := map[string]bool{}
-	versions, e := all(q, "SELECT DISTINCT content_hash FROM versions WHERE id IN (SELECT original_version_id FROM annotations UNION SELECT json_extract(j.value,'$.documentVersionId') FROM contexts c,json_each(c.sources_json) j UNION SELECT version_id FROM recognized_pages UNION SELECT version_id FROM bookmarks UNION SELECT version_id FROM contexts UNION SELECT target_version_id FROM resolutions UNION SELECT version_id FROM leases WHERE expires_at>? UNION SELECT v.id FROM versions v JOIN source_entries e ON e.document_id=v.document_id JOIN sources s ON s.id=e.source_id WHERE s.kind='imported_collection')", time.Now().Unix())
+	versions, e := all(q, "SELECT DISTINCT content_hash FROM versions WHERE id IN (SELECT original_version_id FROM annotations UNION SELECT json_extract(j.value,'$.documentVersionId') FROM contexts c,json_each(c.sources_json) j UNION SELECT version_id FROM recognized_pages UNION SELECT version_id FROM bookmarks UNION SELECT version_id FROM contexts UNION SELECT target_version_id FROM resolutions UNION SELECT version_id FROM leases WHERE expires_at>? UNION SELECT v.id FROM versions v JOIN source_entries e ON e.document_id=v.document_id JOIN sources s ON s.id=e.source_id WHERE s.kind IN ('imported_collection','mcp'))", time.Now().Unix())
 	if e != nil {
 		return nil, e
 	}
@@ -148,7 +148,7 @@ func (s *Server) backup() (M, error) {
 		return nil, e
 	}
 	defer imports.Rollback()
-	entries, e := all(imports, "SELECT e.*,s.root FROM source_entries e JOIN sources s ON s.id=e.source_id WHERE s.kind='imported_collection' AND s.state='active' AND e.state='active'")
+	entries, e := all(imports, "SELECT e.*,s.root FROM source_entries e JOIN sources s ON s.id=e.source_id WHERE s.kind IN ('imported_collection','mcp') AND s.state='active' AND e.state='active'")
 	if e != nil {
 		return nil, e
 	}

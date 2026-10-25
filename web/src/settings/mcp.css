@@ -1,0 +1,78 @@
+.mcp-settings {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.mcp-settings h3,
+.mcp-settings p {
+  margin: 0;
+}
+.mcp-settings .muted {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.mcp-settings code,
+.mcp-config {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mcp-connection-state {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mcp-settings .mcp-enable {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.mcp-settings .mcp-enable input {
+  width: auto;
+}
+.mcp-settings .settings-actions {
+  margin: 0;
+}
+.mcp-key {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mcp-key label {
+  flex: 1;
+  min-width: 180px;
+  display: grid;
+  gap: 6px;
+}
+.mcp-key input {
+  width: 100%;
+  font-family: monospace;
+}
+.mcp-client-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.mcp-client-tabs .active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.mcp-config {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+.mcp-example {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  line-height: 1.8;
+}

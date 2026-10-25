@@ -1,5 +1,7 @@
 # Open Reading
 
+**MCP 接入：** 在 **设置 → MCP 接入** 中连接 Codex、Cursor 等客户端，将 AI 写好的 Markdown / TXT 直接送进书库，后续更新保留旧版本与阅读笔记。[查看接入说明](docs/mcp.md#中文)。
+
 **读不懂，划一下，直接问 AI。**
 
 Open Reading 是以本地为主的阅读与笔记工具，支持 **EPUB、PDF、Markdown、TXT**。选中原文就能提问，围绕这段内容继续追问，让问题、原文和自己的理解留在一起；也支持 PDF / EPUB 互转，书籍与笔记保存在自己的电脑上。

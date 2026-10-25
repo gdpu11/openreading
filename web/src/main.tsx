@@ -2,6 +2,7 @@ import { WorkspaceSearch } from "./library/WorkspaceSearch";
 import { NotesCenter } from "./learning/NotesCenter";
 import { BookTools } from "./readers/BookTools";
 import { BackupSettings } from "./settings/BackupSettings";
+import { MCPSettings } from "./settings/MCPSettings";
 import { restoreCredentials } from "./settings/credentials";
 import { ArticleImport } from "./library/ArticleImport";
 import "./learning/learning.css";
@@ -3442,6 +3443,7 @@ function SettingsModal({
           ["models", "模型与隐私"],
           ["data", "备份与恢复"],
           ["sync", "手机与同步"],
+          ["mcp", "MCP 接入"],
         ].map(([id, name]) => (
           <button
             className={tab === id ? "active" : ""}
@@ -3572,6 +3574,8 @@ function SettingsModal({
         </div>
       ) : tab === "sync" ? (
         <SyncSettings onError={onError} />
+      ) : tab === "mcp" ? (
+        <MCPSettings workspaceId={workspace?.id} />
       ) : tab === "models" ? (
         <ModelSettings
           providers={providers}

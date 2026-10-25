@@ -42,6 +42,11 @@ type credential struct {
 	Version string
 }
 type Server struct {
+	mcpControlMu   sync.Mutex
+	mcpMu          sync.RWMutex
+	mcpConfig      mcpConfig
+	mcpServer      *http.Server
+	mcpError       string
 	downloadMu     sync.Mutex
 	download       *mobileDownload
 	lanControlMu   sync.Mutex
@@ -124,7 +129,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(8)
-	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql", "005.sql", "006.sql"} {
+	for _, migration := range []string{"001.sql", "002.sql", "003.sql", "004.sql", "005.sql", "006.sql", "007.sql"} {
 		schema, err := assets.ReadFile("migrations/" + migration)
 		if err == nil {
 			_, err = db.Exec(string(schema))
@@ -155,6 +160,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.routes()
 	s.initLAN()
+	s.initMCP()
 	s.watcher, _ = fsnotify.NewWatcher()
 	s.watched = map[string]map[string]bool{}
 	if s.watcher != nil {
@@ -169,6 +175,9 @@ func New(cfg Config) (*Server, error) {
 func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
 		s.cancel()
+		s.mcpControlMu.Lock()
+		s.stopMCP()
+		s.mcpControlMu.Unlock()
 		s.stopMobileDownload()
 		s.lanControlMu.Lock()
 		s.stopLAN()
@@ -314,7 +323,7 @@ func decode(r *http.Request, v any) error {
 func body(r *http.Request) (M, error) { m := M{}; e := decode(r, &m); return m, e }
 func (s *Server) routes() {
 	s.route("GET /api/health", func(w http.ResponseWriter, r *http.Request) error {
-		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 6, "serverMode": s.cfg.PublicOrigin != ""})
+		return send(w, M{"status": "ok", "version": "1.6.6", "schemaVersion": 7, "serverMode": s.cfg.PublicOrigin != ""})
 	})
 	s.route("POST /api/session", func(w http.ResponseWriter, r *http.Request) error {
 		b, e := body(r)
@@ -361,6 +370,7 @@ func (s *Server) routes() {
 	s.searchRoutes()
 	s.articleRoutes()
 	s.backupPolicyRoutes()
+	s.mcpRoutes()
 	public, _ := fs.Sub(assets, "static")
 	fileServer := http.FileServer(http.FS(public))
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,7 @@ Open Reading is a local-first reader for **EPUB, PDF, Markdown and TXT**. Ask qu
 - **See your reading activity.** A foreground-only session timer, global calendar, streaks, word counts and configurable reading-time estimates.
 - **Find and revisit ideas.** Search entire books and indexed library content; search and tag notes, review due notes, save named bookmarks and export notes with source links. See [reading improvements](docs/reading-improvements.md).
 - **Organize your library.** Covers, search, sorting, format filters, favorites and finished status. Removing a book from a library keeps its file; original-file deletion requires a separate explicit choice.
+- **Receive AI-written documents over MCP.** Connect Codex or Cursor from **Settings → MCP connections** to create and revise Markdown / TXT in your library. Updates keep previous snapshots and notes. See [MCP setup](docs/mcp.md).
 
 ## Try passage-based AI questions
 

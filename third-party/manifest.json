@@ -1845,6 +1845,14 @@
     "license": "MIT"
   },
   {
+    "name": "cloud.google.com/go/compute/metadata",
+    "version": "v0.3.0",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/cloud.google.com_go_compute_metadata/LICENSE"
+    ]
+  },
+  {
     "name": "github.com/dustin/go-humanize",
     "version": "v1.0.1",
     "ecosystem": "go",
@@ -1858,6 +1866,30 @@
     "ecosystem": "go",
     "notices": [
       "third-party/go/github.com_fsnotify_fsnotify/LICENSE"
+    ]
+  },
+  {
+    "name": "github.com/golang-jwt/jwt/v5",
+    "version": "v5.3.1",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_golang-jwt_jwt_v5/LICENSE"
+    ]
+  },
+  {
+    "name": "github.com/google/go-cmp",
+    "version": "v0.7.0",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_google_go-cmp/LICENSE"
+    ]
+  },
+  {
+    "name": "github.com/google/jsonschema-go",
+    "version": "v0.4.3",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_google_jsonschema-go/LICENSE"
     ]
   },
   {
@@ -1893,6 +1925,14 @@
     ]
   },
   {
+    "name": "github.com/modelcontextprotocol/go-sdk",
+    "version": "v1.8.0",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_modelcontextprotocol_go-sdk/LICENSE"
+    ]
+  },
+  {
     "name": "github.com/ncruces/go-strftime",
     "version": "v1.0.0",
     "ecosystem": "go",
@@ -1909,12 +1949,44 @@
     ]
   },
   {
+    "name": "github.com/segmentio/asm",
+    "version": "v1.1.3",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_segmentio_asm/LICENSE"
+    ]
+  },
+  {
+    "name": "github.com/segmentio/encoding",
+    "version": "v0.5.4",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_segmentio_encoding/LICENSE"
+    ]
+  },
+  {
+    "name": "github.com/yosida95/uritemplate/v3",
+    "version": "v3.0.2",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/github.com_yosida95_uritemplate_v3/LICENSE"
+    ]
+  },
+  {
     "name": "golang.org/x/mod",
     "version": "v0.36.0",
     "ecosystem": "go",
     "notices": [
       "third-party/go/golang.org_x_mod/LICENSE",
       "third-party/go/golang.org_x_mod/PATENTS"
+    ]
+  },
+  {
+    "name": "golang.org/x/oauth2",
+    "version": "v0.35.0",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/golang.org_x_oauth2/LICENSE"
     ]
   },
   {
@@ -1933,6 +2005,15 @@
     "notices": [
       "third-party/go/golang.org_x_sys/LICENSE",
       "third-party/go/golang.org_x_sys/PATENTS"
+    ]
+  },
+  {
+    "name": "golang.org/x/time",
+    "version": "v0.15.0",
+    "ecosystem": "go",
+    "notices": [
+      "third-party/go/golang.org_x_time/LICENSE",
+      "third-party/go/golang.org_x_time/PATENTS"
     ]
   },
   {
