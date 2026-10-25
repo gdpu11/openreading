@@ -225,6 +225,39 @@ describe("additional book formats", () => {
       expect(texts[0]).toContain("section-1.xhtml");
     }
   });
+  it("reads more than 5000 formatted paragraphs without exhausting the resource limit", async () => {
+    const html = Array.from(
+      { length: 5001 },
+      (_, i) => `<p style="color: #234">Paragraph ${i}</p>`,
+    ).join("");
+    const { texts } = await chapters(await normalizeBook(raw(html), "html"));
+    const doc = new DOMParser().parseFromString(
+      texts[0],
+      "application/xhtml+xml",
+    );
+    expect(doc.querySelectorAll("p")).toHaveLength(5001);
+    expect(doc.querySelector("p:last-child")?.textContent).toBe(
+      "Paragraph 5000",
+    );
+    expect(texts[0]).toContain("color: #234");
+  });
+  it("keeps inline CSS image URLs relative to the chapter and blocks remote styles", async () => {
+    const data = `data:image/png;base64,${btoa(String.fromCharCode(...png))}`;
+    const { zip, texts } = await chapters(
+      await normalizeBook(
+        raw(
+          `<html><head><style>p{background-image:url('${data}')}@import 'https://tracker.invalid/a.css';</style></head><body><p style="background-image:url('${data}');color:red">Styled text</p></body></html>`,
+        ),
+        "html",
+      ),
+    );
+    const image = Object.keys(zip.files).find((name) => name.endsWith(".png"))!;
+    expect(image).toBeDefined();
+    expect(texts[0]).toContain(
+      `url(&quot;${image.slice("EPUB/".length)}&quot;)`,
+    );
+    expect(texts[0]).not.toContain("tracker.invalid");
+  });
   it("reads MOBI chapters and rejects DRM before parsing", async () => {
     const noMetadata = mobi();
     new DataView(noMetadata).setUint32(94 + 128, 0);

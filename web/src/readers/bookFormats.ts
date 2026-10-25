@@ -187,18 +187,20 @@ class EpubBuilder {
       );
     return this.resources.get(value)!;
   }
-  async styles(text: string) {
+  async styles(text: string, inChapter = false) {
     text = text
       .replace(/@import[^;]*;?/gi, "")
       .replace(/expression\([^)]*\)/gi, "");
     for (const m of [
       ...text.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi),
     ].reverse()) {
-      const name = await this.resource(m[2]);
-      // CSS lives in assets/, whereas chapter inline CSS lives in EPUB/.
+      const name = m[2].startsWith("#") ? m[2] : await this.resource(m[2]);
+      // Stylesheets live in assets/; inline CSS resolves from the chapter.
+      const href =
+        name.startsWith("#") || inChapter ? name : name.split("/").pop();
       text =
         text.slice(0, m.index) +
-        (name ? `url("${name.split("/").pop()}")` : "none") +
+        (name ? `url("${href}")` : "none") +
         text.slice(m.index! + m[0].length);
     }
     return text;
@@ -259,27 +261,15 @@ class EpubBuilder {
         }
       }
       for (const el of doc.querySelectorAll("style,[style]")) {
-        // Store cleaned CSS as a resource so relative image URLs have one base.
-        const value =
-          el.localName === "style"
-            ? el.textContent || ""
-            : `*[data-inline="${i}-${doc.querySelectorAll("[data-inline]").length}"] {${el.getAttribute("style")}}`;
-        if (el.localName !== "style") {
+        // Keep cleaned inline formatting in the chapter. One asset per styled
+        // element both inflated EPUBs and rejected ordinary long documents.
+        if (el.localName === "style")
+          el.textContent = await this.styles(el.textContent || "", true);
+        if (el.hasAttribute("style"))
           el.setAttribute(
-            "data-inline",
-            `${i}-${doc.querySelectorAll("[data-inline]").length}`,
+            "style",
+            await this.styles(el.getAttribute("style")!, true),
           );
-          el.removeAttribute("style");
-        }
-        const name = await this.asset(
-          new TextEncoder().encode(await this.styles(value)),
-          "text/css",
-        );
-        const link = doc.createElement("link");
-        link.rel = "stylesheet";
-        link.href = name;
-        doc.head.append(link);
-        if (el.localName === "style") el.remove();
       }
       for (const href of section.css || []) {
         const name = await this.resource(href);
