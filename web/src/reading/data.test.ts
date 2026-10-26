@@ -5,6 +5,8 @@ import {
   booksForDay,
   ReadingClock,
   type ReadingEvent,
+  bookReadingMilliseconds,
+  clockTime,
 } from "./data";
 let serial = 0;
 const event = (start: number, end: number, member = "a"): ReadingEvent => ({
@@ -14,6 +16,50 @@ const event = (start: number, end: number, member = "a"): ReadingEvent => ({
   endedAt: end,
 });
 describe("reading intervals and calendar", () => {
+  it("combines book history, pending receipts and the live interval without counting overlaps twice", () => {
+    const start = Date.now() - 120000;
+    const history = event(start, start + 30000);
+    const live = event(start + 20000, start + 50000);
+    expect(
+      bookReadingMilliseconds(
+        [
+          history,
+          history,
+          live,
+          event(start, start + 90000, "other-book"),
+          event(start - 86400000, start - 86400000 + 10000),
+        ],
+        "a",
+      ),
+    ).toBe(60000);
+    expect(bookReadingMilliseconds([], "a")).toBe(0);
+    expect(bookReadingMilliseconds([history], "other-book")).toBe(0);
+  });
+  it("formats cumulative reading time without wrapping at an hour or a day", () => {
+    expect(clockTime(59000)).toBe("00:59");
+    expect(clockTime(3600000)).toBe("01:00:00");
+    expect(clockTime(27 * 3600000 + 65000)).toBe("27:01:05");
+  });
+  it("exposes only the current unflushed interval alongside immutable receipts", () => {
+    const events: ReadingEvent[] = [],
+      wall = Date.now();
+    const clock = new ReadingClock("a", (e) => events.push(e), wall, 0);
+    clock.tick(true, wall + 1000, 1000);
+    expect(clock.pendingInterval).toEqual({
+      member: "a",
+      startedAt: wall,
+      endedAt: wall + 1000,
+    });
+    clock.flush();
+    expect(clock.pendingInterval).toBeNull();
+    for (let t = 2000; t <= 6000; t += 1000) clock.tick(true, wall + t, t);
+    expect(
+      bookReadingMilliseconds([...events, clock.pendingInterval!], "a"),
+    ).toBe(6000);
+    clock.tick(false, wall + 7000, 7000);
+    expect(clock.pendingInterval).toBeNull();
+    expect(bookReadingMilliseconds(events, "a")).toBe(6000);
+  });
   it("merges overlapping windows/devices and retries without inflating total time", () => {
     const start = new Date(2026, 9, 19, 12).getTime(),
       a = event(start, start + 60000),

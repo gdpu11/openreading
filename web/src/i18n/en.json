@@ -1041,5 +1041,12 @@
   "重新预览": "Preview again",
   "PDF 讲解仅依据已提取或识别的文字，不包含扫描页或图表中的未识别内容。": "PDF explanations use extracted or recognized text only. Unrecognized scans and chart content are not included.",
   "可提取原文共 {0} 字": "Extractable source text: {0} characters",
-  "本节笔记": "Section note"
+  "本节笔记": "Section note",
+  "累计已读": "Total read",
+  "累计阅读时长": "Total reading time",
+  "这本书历次有效阅读时间的累计，包含本次阅读；重叠时段只计一次。": "Active reading time across all sessions for this book, including this session. Overlapping intervals count once.",
+  "累计时长暂未更新，恢复连接后自动重试": "Total reading time has not refreshed. It will retry after reconnecting.",
+  "暂不可用": "Unavailable",
+  "读取中…": "Loading…",
+  "待更新": "Pending refresh"
 }

@@ -722,7 +722,13 @@ small {
 .document-timer {
   flex-shrink: 0;
 }
-.session-timer {
+.reading-timers {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.session-timer,
+.cumulative-reading-time {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -730,14 +736,21 @@ small {
   font: 11px/1.5 system-ui;
   white-space: nowrap;
 }
-.session-timer output {
+.session-timer output,
+.cumulative-reading-time output {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.session-timer small {
+.session-timer small,
+.cumulative-reading-time small {
   font-size: 10px;
 }
 @media (max-width: 1180px) {
+  .reading-timers {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 0;
+  }
   .session-timer > span,
   .session-timer > small {
     display: none;

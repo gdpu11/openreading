@@ -7,6 +7,29 @@ export type ReadingEvent = {
   title?: string;
 };
 export type ReadingData = { events: ReadingEvent[]; goalMinutes: number };
+export type ReadingInterval = Pick<
+  ReadingEvent,
+  "member" | "startedAt" | "endedAt"
+>;
+export function bookReadingMilliseconds(
+  events: ReadingInterval[],
+  member: string,
+) {
+  return union(events.filter((event) => event.member === member)).reduce(
+    (sum, [start, end]) => sum + end - start,
+    0,
+  );
+}
+export function clockTime(milliseconds: number) {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  return [
+    ...(seconds >= 3600 ? [Math.floor(seconds / 3600)] : []),
+    Math.floor(seconds / 60) % 60,
+    seconds % 60,
+  ]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
 export const dayKey = (time: number | Date) => {
   const d = new Date(time);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -143,6 +166,15 @@ export class ReadingClock {
   }
   get elapsedMilliseconds() {
     return this.elapsed;
+  }
+  get pendingInterval(): ReadingInterval | null {
+    return this.start === null
+      ? null
+      : {
+          member: this.member,
+          startedAt: this.start,
+          endedAt: this.end,
+        };
   }
   get idle() {
     return this.mono >= this.interaction + 120000;

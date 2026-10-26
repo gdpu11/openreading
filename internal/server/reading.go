@@ -81,6 +81,17 @@ func (s *Server) readingData(q querier, d M) (M, error) {
 	return M{"events": events, "goalMinutes": goal}, nil
 }
 func (s *Server) readingRoutes() {
+	s.route("GET /api/reading/documents/{member}", func(w http.ResponseWriter, r *http.Request) error {
+		member := r.PathValue("member")
+		if _, e := s.member(s.db, member); e != nil {
+			return e
+		}
+		events, e := all(s.db, `SELECT id,workspace_document_id AS member,started_at,ended_at FROM reading_events WHERE workspace_document_id=? ORDER BY started_at,id`, member)
+		if e != nil {
+			return e
+		}
+		return send(w, M{"events": events})
+	})
 	for _, phone := range []bool{false, true} {
 		prefix := "/api/reading"
 		if phone {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { ReadingClock, type ReadingEvent } from "./data";
+import { ReadingClock, type ReadingEvent, type ReadingInterval } from "./data";
 export function useReadingActivity(
   host: RefObject<HTMLDivElement | null>,
   member: string,
@@ -7,18 +7,35 @@ export function useReadingActivity(
   record?: (e: ReadingEvent) => void,
 ) {
   const latest = useRef(record);
-  const total = useRef({ member, milliseconds: 0 });
-  const [session, setSession] = useState({ milliseconds: 0, running: false });
+  const total = useRef({
+    member,
+    milliseconds: 0,
+    intervals: [] as ReadingInterval[],
+  });
+  const [session, setSession] = useState({
+    member,
+    milliseconds: 0,
+    running: false,
+    intervals: [] as ReadingInterval[],
+  });
   latest.current = record;
   useEffect(() => {
     if (total.current.member !== member)
-      total.current = { member, milliseconds: 0 };
+      total.current = { member, milliseconds: 0, intervals: [] };
     const base = total.current.milliseconds;
     if (!enabled || !latest.current) {
-      setSession({ milliseconds: base, running: false });
+      setSession({
+        member,
+        milliseconds: base,
+        running: false,
+        intervals: [...total.current.intervals],
+      });
       return;
     }
-    const clock = new ReadingClock(member, (e) => latest.current?.(e));
+    const clock = new ReadingClock(member, (e) => {
+      total.current.intervals.push(e);
+      latest.current?.(e);
+    });
     const visible = () => {
       const nativeState = document.documentElement.dataset.readingSystemActive;
       // Electron's native window state includes focus, minimization and screen
@@ -35,9 +52,19 @@ export function useReadingActivity(
       const milliseconds = base + clock.elapsedMilliseconds;
       const running = active && !clock.idle;
       setSession((previous) =>
-        previous.milliseconds === milliseconds && previous.running === running
+        previous.member === member &&
+        previous.milliseconds === milliseconds &&
+        previous.running === running
           ? previous
-          : { milliseconds, running },
+          : {
+              member,
+              milliseconds,
+              running,
+              intervals: [
+                ...total.current.intervals,
+                ...(clock.pendingInterval ? [clock.pendingInterval] : []),
+              ],
+            },
       );
     };
     const tick = () => {

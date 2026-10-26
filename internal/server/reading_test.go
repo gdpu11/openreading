@@ -43,6 +43,18 @@ func TestReadingReceiptsScopeBackupAndRestart(t *testing.T) {
 	if len(global) != 3 {
 		t.Fatal("desktop must include reading events from every workspace", global)
 	}
+	bookHistory := arr(c.ok("GET", "/api/reading/documents/"+str(doc, "id"), nil), "events")
+	if len(bookHistory) != 2 {
+		t.Fatal("book reading history must exclude other workspace documents", bookHistory)
+	}
+	for _, raw := range bookHistory {
+		if str(raw.(map[string]any), "member") != str(doc, "id") {
+			t.Fatal("another book leaked into cumulative reading time", raw)
+		}
+	}
+	if status, _ := c.req("GET", "/api/reading/documents/"+id(), nil); status != 404 {
+		t.Fatal("unknown book reading history", status)
+	}
 	seen := map[string]bool{}
 	for _, raw := range global {
 		seen[str(raw.(map[string]any), "member")] = true
