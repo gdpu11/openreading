@@ -16,15 +16,24 @@ import {
   Trash2,
   Undo2,
   ArrowLeftRight,
+  Smartphone,
+  FolderSync,
 } from "lucide-react";
 import { tr } from "../i18n";
 export type BookAction =
-  "favorite" | "finished" | "delete" | "restore" | "convert";
+  | "favorite"
+  | "finished"
+  | "delete"
+  | "restore"
+  | "convert"
+  | "sync"
+  | "sync-folder";
 export type BookFilter = "all" | "favorites" | "finished" | "removed";
 type Target = { book: any; x: number; y: number; trigger: HTMLElement };
 
 export function useBookContextMenu(
   onAction: (book: any, action: BookAction) => void,
+  allowSync = false,
 ) {
   const [target, setTarget] = useState<Target | null>(null);
   const activeTarget = useRef(target);
@@ -54,7 +63,12 @@ export function useBookContextMenu(
   return {
     bookMenuProps,
     menu: target ? (
-      <BookContextMenu target={target} close={close} onAction={onAction} />
+      <BookContextMenu
+        target={target}
+        close={close}
+        onAction={onAction}
+        allowSync={allowSync}
+      />
     ) : null,
   };
 }
@@ -62,10 +76,12 @@ function BookContextMenu({
   target,
   close,
   onAction,
+  allowSync,
 }: {
   target: Target;
   close: (focus?: boolean) => void;
   onAction: (book: any, action: BookAction) => void;
+  allowSync: boolean;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: target.x, top: target.y });
@@ -123,6 +139,24 @@ function BookContextMenu({
           icon: book.finishedAt ? BookOpen : BookCheck,
           checked: !!book.finishedAt,
         },
+        ...(allowSync
+          ? [
+              {
+                action: "sync" as const,
+                label: "同步到手机…",
+                icon: Smartphone,
+              },
+              ...(book.bindings[0]?.sourceId
+                ? [
+                    {
+                      action: "sync-folder" as const,
+                      label: "同步所在文件夹…",
+                      icon: FolderSync,
+                    },
+                  ]
+                : []),
+            ]
+          : []),
         ...(book.format === "pdf" || isEpubFormat(book.format)
           ? [
               {

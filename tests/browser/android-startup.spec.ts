@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { createServer, type Server } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { resolve, extname } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -44,6 +44,44 @@ test.afterAll(async () => {
   await new Promise<void>((done, reject) =>
     server.close((error) => (error ? reject(error) : done())),
   );
+});
+
+test("paired phone waits for a PC sync request across startup, foreground and reconnect", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("open-reading-language", "zh"));
+  let bookRequests = 0;
+  await page.route("**/api/sync/**", async (route) => {
+    if (route.request().url().endsWith("/sync/status")) await route.fulfill({ json: { enabled: false } });
+    else { bookRequests++; await route.fulfill({ status: 403, json: { message: "No PC selection" } }); }
+  });
+  await page.goto(origin + "/mobile");
+  await expect(page.locator(".mobile-app")).toBeVisible();
+  await page.evaluate(async (origin) => {
+    const db = await new Promise<IDBDatabase>((done) => { const r = indexedDB.open("open-reading-mobile", 1); r.onupgradeneeded = () => r.result.createObjectStore("data"); r.onsuccess = () => done(r.result); });
+    await new Promise<void>((done, reject) => {
+      const tx = db.transaction("data", "readwrite");
+      tx.objectStore("data").put(JSON.stringify({ origin, token: "b".repeat(64), deviceId: "phone", name: "我的 Android" }), "connection");
+      tx.oncomplete = () => done(); tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, origin);
+  await page.clock.install();
+  await page.reload();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByText("已配对电脑书库", { exact: true })).toBeVisible();
+  await page.evaluate(() => { window.dispatchEvent(new Event("online")); document.dispatchEvent(new Event("visibilitychange")); });
+  await page.clock.runFor(65000);
+  expect(bookRequests).toBe(0);
+  await expect(page.locator(".mobile-sync-status")).toContainText("等待电脑选择书籍");
+  expect(await page.locator(".mobile-app").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  if (process.env.OR_EVIDENCE_DIR) {
+    await mkdir(process.env.OR_EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: resolve(process.env.OR_EVIDENCE_DIR, "phone-sync-settings-light.png") });
+  }
+  await page.getByRole("button", { name: "书架", exact: true }).click();
+  await expect(page.locator(".mobile-empty-shelf")).toContainText("只带上你想读的书");
+  if (process.env.OR_EVIDENCE_DIR) await page.screenshot({ path: resolve(process.env.OR_EVIDENCE_DIR, "phone-sync-empty-shelf.png") });
+  expect(await page.pageErrors()).toEqual([]);
 });
 
 test("Android production startup works without modern WebView built-ins", async ({

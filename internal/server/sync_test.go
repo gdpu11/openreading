@@ -12,7 +12,11 @@ import (
 )
 
 func deviceReq(c *testClient, token, method, path string, b any) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, "https://reader.example.invalid"+path, strings.NewReader(js(b)))
+	origin := c.s.cfg.PublicOrigin
+	if origin == "" {
+		origin = "http://127.0.0.1:7318"
+	}
+	r := httptest.NewRequest(method, origin+path, strings.NewReader(js(b)))
 	r.Header.Set("Origin", "capacitor://localhost")
 	r.Header.Set("Authorization", "Bearer "+token)
 	r.Header.Set("Content-Type", "application/json")

@@ -13,7 +13,7 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
   const [workspaces, setWorkspaces] = useState<any[]>([]),
     [selection, setSelection] = useState<SyncSelection>({
       workspaceIds: [],
-      syncScope: { mode: "all" },
+      syncScope: { mode: "manual", memberIds: [] },
     }),
     [files, setFiles] = useState<SyncFile[] | null>(null),
     [editing, setEditing] = useState<string | null>(null),
@@ -51,7 +51,7 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
         setWorkspaces(v);
         setSelection({
           workspaceIds: v.map((w: any) => w.id),
-          syncScope: { mode: "all" },
+          syncScope: { mode: "manual", memberIds: [] },
         });
       })
       .catch(onError);
@@ -121,14 +121,14 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
       <h3>{tr("2. 配对与同步")}</h3>
       <p>
         {tr(
-          "电脑确认配对后，手机可下载所选工作区的文件和笔记。手机离线笔记在重新联网时同步；修改冲突会保留草稿。",
+          "配对只建立连接，默认不下载书籍。在电脑书库点击“同步”，选择书籍、文件夹或整个工作区，再开始同步。",
         )}
       </p>
       {!cloud && (
         <div className="lan-controls">
           <p>
             {tr(
-              "电脑就是书库服务器。手机与电脑连接同一 Wi-Fi 或局域网，扫码后直接同步这台电脑的文件与笔记，无需云端账号或自建服务器。",
+              "电脑就是书库服务器。手机与电脑连接同一 Wi-Fi 或局域网，扫码只建立连接，书籍由电脑端选择后同步，无需云端账号或自建服务器。",
             )}
           </p>
           <label>
@@ -139,7 +139,7 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
               min={1024}
               max={65535}
               value={port}
-              disabled={lan?.enabled || busy}
+              disabled={!lan || lan.enabled || busy}
               onChange={(e) => setPort(Number(e.target.value))}
             />
           </label>
@@ -263,7 +263,9 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
                     </button>
                   </>
                 ) : status?.state === "approved" ? (
-                  <p role="status">{tr("已授权。请在手机上下载并同步。")}</p>
+                  <p role="status">
+                    {tr("已配对。返回书库选择同步范围并开始同步。")}
+                  </p>
                 ) : status?.state === "expired" ? (
                   <p>{tr("二维码已过期，请重新生成。")}</p>
                 ) : (
@@ -361,11 +363,10 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
                   onClick={async () => {
                     setBusy(true);
                     try {
-                      await api(
-                        "/devices/" + d.id + "/scope",
-                        "PUT",
-                        deviceSelection,
-                      );
+                      await api("/devices/" + d.id + "/scope", "PUT", {
+                        ...deviceSelection,
+                        expectedRevision: d.syncScope?.revision || "",
+                      });
                       await reload();
                       setEditing(null);
                       setSavedDevice(d.id);

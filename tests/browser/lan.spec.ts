@@ -7,15 +7,18 @@ import https from "node:https";
 import { createHash } from "node:crypto";
 import net from "node:net";
 
-test.use({ trace: "off", screenshot: "off" });
+test.use({ trace: "off", screenshot: "off", actionTimeout: 10000 });
 test("computer-only LAN pairing and phone offline notes through a simulated native bridge", async ({
   browser,
 }) => {
   test.setTimeout(240000);
-  await mkdir(resolve("docs/evidence/reading"), { recursive: true });
+  const readingEvidence = resolve(
+    process.env.OR_LAN_EVIDENCE_DIR || "docs/evidence/reading",
+  );
+  await mkdir(readingEvidence, { recursive: true });
   const dir = await mkdtemp(join(tmpdir(), "openreading-lan-ui-"));
   const service = spawn(
-    resolve("release/lan-test-server"),
+    resolve(process.env.OR_TEST_BINARY || "release/lan-test-server"),
     ["--port", "0", "--data-dir", join(dir, "data"), "--machine-readable"],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -219,6 +222,7 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
       localStorage.setItem("open-reading-language", "zh"),
     );
     await mobile.goto(ready.url + "/mobile");
+    await mobile.getByRole("button", { name: "设置", exact: true }).click();
     await mobile
       .getByRole("button", { name: "扫描电脑二维码", exact: true })
       .click();
@@ -228,30 +232,61 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await page.getByRole("button", { name: "确认授权此设备" }).click();
     await mobile.clock.runFor(2000);
     await expect(
+      mobile.getByText("已配对电脑书库", { exact: true }),
+    ).toBeVisible();
+    await mobile
+      .locator(".mobile-settings")
+      .evaluate((el) => el.scrollTo(0, 0));
+    await mobile.screenshot({
+      path: join(readingEvidence, "phone-sync-settings-light.png"),
+    });
+    await mobile.getByRole("button", { name: "书架", exact: true }).click();
+    await mobile.clock.runFor(31000);
+    await expect(mobile.locator(".mobile-empty-shelf")).toContainText(
+      "只带上你想读的书",
+    );
+    await page
+      .getByRole("button", { name: "修改同步范围", exact: true })
+      .click();
+    await page
+      .locator(".device-scope-editor")
+      .getByLabel("文件选择方式")
+      .selectOption("all");
+    await page
+      .getByRole("button", { name: "保存同步范围", exact: true })
+      .click();
+    await expect(
+      page.getByText("同步范围已保存，下次手机同步时生效。", { exact: true }),
+    ).toBeVisible();
+    await mobile.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(
       mobile.getByRole("button", { name: /电脑原文.txt/ }),
     ).toBeVisible();
     await mobile.getByRole("button", { name: /电脑原文.txt/ }).click();
     await expect(mobile.locator(".plain-text")).toHaveText(text);
     await mobile.bringToFront();
     await mobile.clock.runFor(65000);
-    const readingElement = await mobile.locator(".plain-text").elementHandle();
     await page
       .getByRole("button", { name: "关闭局域网同步", exact: true })
       .click();
     await mobile.bringToFront();
     await mobile.clock.runFor(17000);
+    await mobile.getByRole("button", { name: "返回书库", exact: true }).click();
+    await mobile.getByRole("button", { name: "设置", exact: true }).click();
     await mobile.getByRole("button", { name: "阅读数据", exact: true }).click();
     await expect(mobile.locator(".reading-stats")).toContainText(
-      "含手机离线阅读记录",
+      "阅读记录随所选书籍同步",
     );
     await mobile.screenshot({
-      path: resolve("docs/evidence/reading/phone-statistics.png"),
+      path: join(readingEvidence, "phone-statistics.png"),
     });
     await mobile.getByRole("button", { name: "导出数据", exact: true }).click();
     await expect.poll(() => shared).toBe(1);
     expect(sharedFiles[0]).toMatch(/\.csv$/);
     await mobile.getByRole("button", { name: "关闭阅读数据" }).click();
-    expect(await readingElement!.evaluate((el) => el.isConnected)).toBe(true);
+    await mobile.getByRole("button", { name: "书架", exact: true }).click();
+    await mobile.getByRole("button", { name: /电脑原文.txt/ }).click();
+    await expect(mobile.locator(".plain-text")).toHaveText(text);
     await mobile.locator(".plain-text").evaluate((el) => {
       const range = document.createRange();
       range.selectNodeContents(el);
@@ -266,15 +301,17 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await mobile
       .getByRole("button", { name: "保存手机笔记", exact: true })
       .click();
-    await expect(mobile.getByRole("status")).toContainText(/离线|等待/);
     await expect(mobile.locator(".plain-text")).toHaveText(text);
+    await mobile.getByRole("button", { name: "返回书库", exact: true }).click();
+    await mobile.getByRole("button", { name: "设置", exact: true }).click();
+    await expect(mobile.locator(".mobile-sync-status")).toContainText(/离线|等待/);
     await page
       .getByRole("button", { name: "开启局域网同步", exact: true })
       .click();
     await mobile
       .getByRole("button", { name: "同步文件与笔记", exact: true })
       .click();
-    await expect(mobile.getByRole("status")).toHaveText("文件与笔记已同步");
+    await expect(mobile.locator(".mobile-sync-status")).toContainText("文件与笔记已同步");
     const readingData = await (
       await pc.request.get(ready.url + "/api/reading")
     ).json();
@@ -298,18 +335,20 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await page.getByRole("button", { name: "导出数据", exact: true }).click();
     expect((await csvDownload).suggestedFilename()).toContain("阅读数据.csv");
     await page.screenshot({
-      path: resolve("docs/evidence/reading/desktop-statistics.png"),
+      path: join(readingEvidence, "desktop-statistics.png"),
     });
     await page.getByRole("button", { name: "切换主题", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await page.screenshot({
-      path: resolve("docs/evidence/reading/desktop-statistics-dark.png"),
+      path: join(readingEvidence, "desktop-statistics-dark.png"),
     });
     await page.getByRole("button", { name: "切换主题", exact: true }).click();
     const notes = await (
       await pc.request.get(ready.url + `/api/workspaces/${ws.id}/notes`)
     ).json();
     expect(notes[0].messages[0].body).toBe("无需云端，断开电脑时写的笔记。");
+    await mobile.getByRole("button", { name: "书架", exact: true }).click();
+    await mobile.getByRole("button", { name: /电脑原文.txt/ }).click();
     await mobile
       .getByRole("button", { name: "导出本书 ORD", exact: true })
       .click();
@@ -323,9 +362,11 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
   } finally {
     await pc.close();
     await phone.close();
-    const exited = new Promise((r) => service.once("exit", r));
-    service.kill("SIGTERM");
-    await exited;
+    if (service.exitCode === null) {
+      const exited = new Promise((r) => service.once("exit", r));
+      service.kill("SIGTERM");
+      await exited;
+    }
     await rm(dir, { recursive: true, force: true });
   }
 });

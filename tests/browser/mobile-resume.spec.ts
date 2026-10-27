@@ -75,6 +75,11 @@ test("phone restarts with completed files cached and a partial file resumed at i
     let restart = false,
       finished = false;
     await context.route("**/api/sync/**", async (route) => {
+      if (route.request().url().endsWith("/sync/status")) {
+        // These books were explicitly requested from the PC before restarting.
+        await route.fulfill({ json: { enabled: true } });
+        return;
+      }
       if (finished) {
         await route.abort("failed");
         return;
@@ -198,6 +203,22 @@ test("phone restarts with completed files cached and a partial file resumed at i
     await expect(
       phone.getByRole("button", { name: /已下载.txt/ }),
     ).toBeVisible();
+    // A PC deselection must stop future downloads without hiding offline books.
+    finished = false;
+    library.workspaces[0].documents = [];
+    await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(phone.locator(".mobile-sync-status")).toContainText(
+      "未选择新书，手机已有副本已保留",
+    );
+    await phone.getByRole("button", { name: "书架", exact: true }).click();
+    await expect(phone.locator(".mobile-document")).toHaveCount(2);
+    await expect(phone.locator(".mobile-document > small")).toHaveText([
+      "仅本机保留",
+      "仅本机保留",
+    ]);
+    expect(ranges[0]).toHaveLength(1);
+    expect(ranges[1]).toHaveLength(4);
     expect(await phone.pageErrors()).toEqual([]);
   } finally {
     release();

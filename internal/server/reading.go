@@ -63,8 +63,22 @@ func (s *Server) readingData(q querier, d M) (M, error) {
 		return nil, e
 	}
 	events := []M{}
+	visibility := map[string]bool{}
 	for _, v := range rows {
-		if d == nil || deviceDocument(d, M{"id": v["member"], "workspaceId": v["workspaceId"], "format": v["format"]}) {
+		allowed := true
+		if d != nil {
+			member := str(v, "member")
+			var known bool
+			allowed, known = visibility[member]
+			if !known {
+				allowed, e = deviceDocument(q, d, M{"id": v["member"], "workspaceId": v["workspaceId"], "format": v["format"]})
+				if e != nil {
+					return nil, e
+				}
+				visibility[member] = allowed
+			}
+		}
+		if allowed {
 			delete(v, "format")
 			delete(v, "workspaceId")
 			events = append(events, v)

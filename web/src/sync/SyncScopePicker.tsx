@@ -1,19 +1,14 @@
 import { bookFormats } from "../formats";
 import { useState } from "react";
 import { tr } from "../i18n";
-
-export type SyncScope = {
-  mode: "all" | "formats" | "manual";
-  formats?: string[];
-  memberIds?: string[];
-};
-export type SyncSelection = { workspaceIds: string[]; syncScope: SyncScope };
-export type SyncFile = {
-  id: string;
-  workspaceId: string;
-  title: string;
-  format: string;
-};
+import {
+  syncFileSelected,
+  selectSyncFiles,
+  type SyncScope,
+  type SyncSelection,
+  type SyncFile,
+} from "./selection";
+export type { SyncScope, SyncSelection, SyncFile } from "./selection";
 const formats = bookFormats.map(([kind]) => kind);
 const formatName = (format: string) =>
   format === "markdown" ? "Markdown" : format.toUpperCase();
@@ -22,7 +17,7 @@ export const validSelection = (value: SyncSelection) =>
   (value.syncScope.mode === "all" ||
     (value.syncScope.mode === "formats"
       ? !!value.syncScope.formats?.length
-      : !!value.syncScope.memberIds?.length));
+      : true));
 
 export function SyncScopePicker({
   workspaces,
@@ -47,13 +42,7 @@ export function SyncScopePicker({
       f.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
   );
   const members = scope.memberIds || [];
-  const selected = available.filter(
-    (f) =>
-      scope.mode === "all" ||
-      (scope.mode === "formats"
-        ? scope.formats?.includes(f.format)
-        : members.includes(f.id)),
-  );
+  const selected = available.filter((f) => syncFileSelected(value, f));
   const changeScope = (syncScope: SyncScope) =>
     onChange({ ...value, syncScope });
   return (
@@ -73,6 +62,17 @@ export function SyncScopePicker({
                   workspaceIds: ids,
                   syncScope: {
                     ...scope,
+                    workspaceIds: scope.workspaceIds?.filter((id) =>
+                      ids.includes(id),
+                    ),
+                    folders: scope.folders?.filter((folder) =>
+                      ids.includes(folder.workspaceId),
+                    ),
+                    excludedMemberIds: scope.excludedMemberIds?.filter((id) =>
+                      files.some(
+                        (f) => f.id === id && ids.includes(f.workspaceId),
+                      ),
+                    ),
                     memberIds: members.filter((id) =>
                       files.some(
                         (f) => f.id === id && ids.includes(f.workspaceId),
@@ -148,27 +148,13 @@ export function SyncScopePicker({
             </select>
             <button
               type="button"
-              onClick={() =>
-                changeScope({
-                  ...scope,
-                  memberIds: [
-                    ...new Set([...members, ...visible.map((f) => f.id)]),
-                  ],
-                })
-              }
+              onClick={() => onChange(selectSyncFiles(value, visible, true))}
             >
               {tr("勾选当前列表")}
             </button>
             <button
               type="button"
-              onClick={() =>
-                changeScope({
-                  ...scope,
-                  memberIds: members.filter(
-                    (id) => !visible.some((f) => f.id === id),
-                  ),
-                })
-              }
+              onClick={() => onChange(selectSyncFiles(value, visible, false))}
             >
               {tr("取消勾选当前列表")}
             </button>
@@ -178,14 +164,9 @@ export function SyncScopePicker({
               <label className="sync-workspace" key={file.id}>
                 <input
                   type="checkbox"
-                  checked={members.includes(file.id)}
+                  checked={syncFileSelected(value, file)}
                   onChange={(e) =>
-                    changeScope({
-                      ...scope,
-                      memberIds: e.target.checked
-                        ? [...members, file.id]
-                        : members.filter((id) => id !== file.id),
-                    })
+                    onChange(selectSyncFiles(value, [file], e.target.checked))
                   }
                 />
                 <span>
@@ -203,7 +184,9 @@ export function SyncScopePicker({
       )}
       <p className="sync-scope-summary" role="status">
         {tr("当前选中 {0} 个文件").replace("{0}", String(selected.length))}
-        {scope.mode === "manual"
+        {scope.mode === "manual" &&
+        !scope.workspaceIds?.length &&
+        !scope.folders?.length
           ? tr("；后续新增文件需手动勾选。")
           : tr("；后续新增的符合条件的文件也会同步。")}
       </p>

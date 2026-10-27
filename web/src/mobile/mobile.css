@@ -1049,3 +1049,123 @@ body:has(.mobile-app) {
   background: var(--pale);
   border-radius: 8px;
 }
+.mobile-sync-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 16px !important;
+  margin: 0 0 22px;
+  background: var(--pale) !important;
+  border-radius: 14px;
+}
+.mobile-sync-hint > svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.mobile-sync-hint > span {
+  flex: 1;
+}
+.mobile-sync-hint strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.6;
+}
+.mobile-sync-hint small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 4px;
+}
+.mobile-sync-card {
+  padding: 20px;
+}
+.mobile-device-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pale);
+  color: var(--accent);
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+.mobile-sync-card .mobile-connection-title {
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.mobile-sync-card .mobile-connection-title > div {
+  min-width: 0;
+  flex: 1;
+}
+.mobile-sync-card .mobile-connection-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-pair-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.mobile-sync-guide {
+  background: var(--paper);
+  padding: 14px;
+  border-radius: 11px;
+}
+.mobile-sync-guide strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.mobile-sync-guide p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 7px 0 0;
+}
+.mobile-sync-metrics {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  padding: 22px 2px;
+}
+.mobile-sync-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mobile-sync-metrics strong {
+  font-size: 27px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.mobile-sync-metrics span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.mobile-sync-metrics > svg {
+  color: var(--line);
+  margin-left: auto;
+}
+.mobile-app .mobile-sync-button {
+  background: var(--pale);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 13px !important;
+  border: 0 !important;
+}
+.mobile-app .mobile-sync-button > svg {
+  color: inherit;
+}
+.mobile-sync-card .mobile-sync-status {
+  padding: 13px 0;
+  line-height: 1.9;
+}

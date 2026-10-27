@@ -104,6 +104,31 @@ export const allDocuments = (s: MobileState) =>
   s.library?.workspaces.flatMap((w: any) =>
     w.documents.map((d: any) => ({ ...d, workspaceName: w.name })),
   ) || [];
+export function retainOfflineLibrary(previous: any, incoming: any) {
+  if (!previous || previous.deviceId !== incoming.deviceId) return incoming;
+  const retained = new Set<string>();
+  const workspaces = incoming.workspaces.map((w: any) => ({ ...w, documents: w.documents.map((d: any) => ({ ...d, localOnly: false })) }));
+  for (const workspace of previous.workspaces) {
+    let next = workspaces.find((w: any) => w.id === workspace.id);
+    if (!next) {
+      next = { ...workspace, documents: [] };
+      workspaces.push(next);
+    }
+    const current = new Set(next.documents.map((d: any) => d.id));
+    for (const doc of workspace.documents) if (!current.has(doc.id)) {
+      retained.add(doc.id);
+      next.documents.push({ ...doc, localOnly: true });
+    }
+  }
+  const readingData = incoming.readingData && {
+    ...incoming.readingData,
+    events: [...new Map([
+      ...(previous.readingData?.events || []).filter((e: any) => retained.has(e.member)),
+      ...incoming.readingData.events,
+    ].map((e: any) => [e.id, e])).values()],
+  };
+  return { ...incoming, workspaces, ...(readingData ? { readingData } : {}) };
+}
 export async function synchronize(
   c: Connection,
   s: MobileState,
@@ -206,9 +231,9 @@ export async function synchronize(
       (e) => !acknowledged.has(e.id) || !confirmed.has(e.id),
     );
   }
-  s.library = library;
+  s.library = retainOfflineLibrary(s.library, library);
   await persistState(s);
-  return library;
+  return s.library;
 }
 export function mobileReader(s: () => MobileState) {
   const artifacts = new Map<string, any>();

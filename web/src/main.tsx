@@ -65,6 +65,7 @@ import {
   Sun,
   Moon,
   Folder,
+  FolderSync,
   ExternalLink,
   StopCircle,
   MoreHorizontal,
@@ -92,6 +93,7 @@ import {
 } from "./settings/ModelSettings";
 import { ordPath, ordForm, ordResponse, saveORD } from "./ord";
 import { SyncSettings } from "./sync/SyncSettings";
+import { useLibrarySync } from "./sync/LibrarySync";
 import { Capacitor } from "@capacitor/core";
 import { hasAssistantMention } from "./assistantMention";
 const defaults: ReaderPreferences = {
@@ -151,6 +153,7 @@ function App() {
     [preview, setPreview] = useState<any>(null),
     [showPreview, setShowPreview] = useState(false),
     [showSettings, setShowSettings] = useState(false),
+    [settingsInitialTab, setSettingsInitialTab] = useState("reading"),
     [sourceModal, setSourceModal] = useState(false),
     [newWS, setNewWS] = useState(false),
     [wsName, setWsName] = useState(""),
@@ -355,6 +358,7 @@ function App() {
     if (e instanceof ApiError && e.status === 401) setLogin(true);
     setError(e.message || "本地服务暂时不可用，请保留草稿");
   };
+  const librarySync = useLibrarySync(workspace?.id || "", fail, notify);
   const boot = async () => {
     try {
       const me = await api("/me");
@@ -441,6 +445,22 @@ function App() {
   );
   const changeBook = async (book: any, action: BookAction) => {
     try {
+      if (action === "sync" || action === "sync-folder") {
+        setDoc(null);
+        setNotesMode(false);
+        setStatsMode(false);
+        const binding = book.bindings[0];
+        await librarySync.open(
+          action === "sync" ? { memberId: book.id } : {
+            folder: {
+              sourceId: binding.sourceId,
+              path: binding.relativePath.split("/").slice(0, -1).join("/"),
+              workspaceId: workspace.id,
+            },
+          },
+        );
+        return;
+      }
       if (action === "delete") {
         setDeletingBook(book);
         return;
@@ -475,7 +495,7 @@ function App() {
     }
   };
   const { bookMenuProps, menu: bookContextMenu } =
-    useBookContextMenu(changeBook);
+    useBookContextMenu(changeBook, desktopLibrary);
   const loadSources = async () => {
     if (workspace)
       setSources(await api("/workspaces/" + workspace.id + "/sources"));
@@ -1340,6 +1360,22 @@ function App() {
           <div className="source-item" key={s.id}>
             <Folder size={15} />
             <span>{s.label}</span>
+            {desktopLibrary && s.state === "active" && (
+              <button
+                title={tr("同步文件夹 ") + s.label}
+                aria-label={tr("同步文件夹 ") + s.label}
+                onClick={() => {
+                  setDoc(null);
+                  setNotesMode(false);
+                  setStatsMode(false);
+                  void librarySync.open({ folder: {
+                    sourceId: s.id, path: "", workspaceId: workspace.id,
+                  } });
+                }}
+              >
+                <FolderSync size={13} />
+              </button>
+            )}
             {s.state !== "active" && (
               <button
                 title={tr("重新连接来源")}
@@ -2243,6 +2279,14 @@ function App() {
               </>
             ) : desktopLibrary && workspace ? (
               <LibraryShelf
+                sync={librarySync}
+                workspace={workspace}
+                sources={sources}
+                onPair={() => {
+                  librarySync.close();
+                  setSettingsInitialTab("sync");
+                  setShowSettings(true);
+                }}
                 books={documents}
                 filter={bookFilter}
                 format={fileFormat}
@@ -2737,6 +2781,7 @@ function App() {
       )}
       {showSettings && (
         <SettingsModal
+          initialTab={settingsInitialTab}
           preferences={prefs}
           updatePref={updatePref}
           workspace={workspace}
@@ -2750,7 +2795,10 @@ function App() {
               ws.find((w: any) => w.id === workspace?.id) || ws[0] || null,
             );
           }}
-          close={() => setShowSettings(false)}
+          close={() => {
+            setShowSettings(false);
+            setSettingsInitialTab("reading");
+          }}
           onError={fail}
           onNotice={notify}
         />
@@ -3441,6 +3489,7 @@ function SourceModal({ workspace, close, onDone, onError }: any) {
   );
 }
 function SettingsModal({
+  initialTab = "reading",
   preferences: p,
   updatePref,
   workspace,
@@ -3452,7 +3501,7 @@ function SettingsModal({
   onError,
   onNotice,
 }: any) {
-  const [tab, setTab] = useState("reading"),
+  const [tab, setTab] = useState(initialTab),
     [restore, setRestore] = useState<any>(null),
     [busy, setBusy] = useState(false);
   return (

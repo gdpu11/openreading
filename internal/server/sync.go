@@ -38,7 +38,14 @@ func deviceWorkspace(d M, w string) bool {
 }
 func (s *Server) syncMember(q querier, d M, member string) (M, error) {
 	m, e := s.member(q, member)
-	if e != nil || !deviceDocument(d, m) {
+	if e != nil {
+		return nil, problem(403, "SYNC_SCOPE", "此文档不在设备授权范围内", false)
+	}
+	allowed, e := deviceDocument(q, d, m)
+	if e != nil {
+		return nil, e
+	}
+	if !allowed {
 		return nil, problem(403, "SYNC_SCOPE", "此文档不在设备授权范围内", false)
 	}
 	return m, nil
@@ -197,6 +204,9 @@ func (s *Server) syncRoutes() {
 		return send(w, M{"ok": true})
 	})
 	s.route("GET /api/sync/library", s.syncLibrary)
+	s.route("GET /api/sync/status", func(w http.ResponseWriter, r *http.Request) error {
+		return send(w, M{"enabled": obj(deviceFrom(r), "syncScope")["autoSync"] == true})
+	})
 	s.route("GET /api/sync/files/{v}", func(w http.ResponseWriter, r *http.Request) error {
 		member := r.URL.Query().Get("member")
 		if _, e := s.syncMember(s.db, deviceFrom(r), member); e != nil {
@@ -273,7 +283,11 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 			}
 			visible := []M{}
 			for _, m := range docs {
-				if !deviceDocument(d, m) {
+				allowed, err := deviceDocument(tx, d, m)
+				if err != nil {
+					return err
+				}
+				if !allowed {
 					continue
 				}
 				delete(m, "workspaceId")

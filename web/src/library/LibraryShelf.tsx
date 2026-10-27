@@ -8,6 +8,8 @@ import {
   Star,
   BookCheck,
   Trash2,
+  Smartphone,
+  Check,
 } from "lucide-react";
 import { tr } from "../i18n";
 import type { ReaderPreferences } from "../readers/types";
@@ -20,6 +22,10 @@ import { BookCover } from "./BookCover";
 import type { BookFilter } from "./BookContextMenu";
 import { DocumentSort } from "./DocumentSort";
 import { HoverDetails } from "./HoverDetails";
+import {
+  LibrarySyncControls,
+  type LibrarySyncController,
+} from "../sync/LibrarySync";
 export function LibraryShelf({
   books,
   cursor,
@@ -39,7 +45,15 @@ export function LibraryShelf({
   bookMenuProps,
   format,
   onFormat,
+  sync,
+  workspace,
+  sources,
+  onPair,
 }: {
+  sync: LibrarySyncController;
+  workspace: { id: string; name: string };
+  sources: any[];
+  onPair: () => void;
   format: DocumentFormat;
   onFormat: (format: DocumentFormat) => void;
   filter: BookFilter;
@@ -99,6 +113,14 @@ export function LibraryShelf({
             <RefreshCw size={16} className={refreshing ? "spinning" : ""} />
             <span>{tr("刷新")}</span>
           </button>
+          <button
+            aria-pressed={sync.active}
+            disabled={sync.busy}
+            onClick={() => (sync.active ? sync.close() : void sync.open())}
+          >
+            <Smartphone size={16} />
+            <span>{tr("同步")}</span>
+          </button>
           <HoverDetails className="library-sources">
             <summary>
               <Folder size={16} />
@@ -117,6 +139,13 @@ export function LibraryShelf({
           <DocumentFormatFilter value={format} onChange={onFormat} />
         </div>
       </div>
+      <LibrarySyncControls
+        sync={sync}
+        workspace={workspace}
+        sources={sources}
+        books={books}
+        onPair={onPair}
+      />
       <BookFilters value={filter} onChange={onFilter} />
       <div className="library-count">
         {books.length}
@@ -128,15 +157,37 @@ export function LibraryShelf({
             book.bindings[0]?.relativePath?.split("/").pop() || tr("历史文档");
           return (
             <button
-              className="library-book"
+              className={
+                "library-book" +
+                (sync.active && sync.selected(book) ? " sync-selected" : "")
+              }
               key={book.id}
               title={title}
+              role={sync.active ? "checkbox" : undefined}
+              aria-checked={sync.active ? sync.selected(book) : undefined}
+              aria-label={sync.active ? tr("选择同步 ") + title : undefined}
+              disabled={
+                sync.active &&
+                (sync.loading ||
+                  sync.busy ||
+                  !sync.deviceId ||
+                  !!book.removedAt)
+              }
               {...bookMenuProps(book)}
               onClick={() => {
+                if (sync.active) {
+                  sync.selectFiles([book.id], !sync.selected(book));
+                  return;
+                }
                 if (!book.removedAt) open(book);
               }}
             >
               <BookCover book={book} title={title} />
+              {sync.active && (
+                <span className="library-sync-check" aria-hidden="true">
+                  {sync.selected(book) && <Check size={15} strokeWidth={3} />}
+                </span>
+              )}
               <span className="library-book-status">
                 {!!book.favorite && (
                   <span aria-label={tr("已收藏")} title={tr("已收藏")}>

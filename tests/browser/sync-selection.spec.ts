@@ -12,7 +12,7 @@ test("desktop selects file types and individual files, and updates an existing p
   const dir = await mkdtemp(join(tmpdir(), "openreading-sync-selection-"));
   const code = "a".repeat(64);
   const service = spawn(
-    resolve("desktop/runtime/openreading"),
+    resolve(process.env.OR_TEST_BINARY || "desktop/runtime/openreading"),
     [
       "--port",
       "0",
@@ -110,7 +110,7 @@ test("desktop selects file types and individual files, and updates an existing p
       .click();
     await page.getByRole("button", { name: "手机与同步", exact: true }).click();
     const picker = page.locator(".sync-scope").first();
-    await expect(picker).toContainText("当前选中 5 个文件");
+    await expect(picker).toContainText("当前选中 0 个文件");
     await picker.getByLabel("另一个工作区", { exact: true }).uncheck();
     await picker.getByLabel("文件选择方式").selectOption("formats");
     await picker.getByLabel("TXT", { exact: true }).uncheck();
@@ -138,7 +138,7 @@ test("desktop selects file types and individual files, and updates an existing p
       .getByRole("button", { name: "确认授权此设备", exact: true })
       .click();
     await expect(
-      page.getByText("已授权。请在手机上下载并同步。"),
+      page.getByText("已配对。返回书库选择同步范围并开始同步。"),
     ).toBeVisible();
     const readLibrary = async () => {
       const response = await pc.request.get(base + "/api/sync/library", {
@@ -164,7 +164,7 @@ test("desktop selects file types and individual files, and updates an existing p
       name: "保存同步范围",
       exact: true,
     });
-    await expect(save).toBeDisabled();
+    await expect(save).toBeEnabled();
     await editor.getByLabel("筛选文件类型").selectOption("epub");
     await editor
       .getByRole("button", { name: "勾选当前列表", exact: true })

@@ -11,6 +11,9 @@ import {
   SlidersHorizontal,
   Bookmark,
   ArrowUpRight,
+  Laptop,
+  Smartphone,
+  CheckCircle2,
 } from "lucide-react";
 import { dailyTotals, dayKey } from "../reading/data";
 import "../learning/learning.css";
@@ -97,6 +100,7 @@ export function MobileApp() {
     [version, setVersion] = useState(0),
     [status, setStatus] = useState(""),
     [syncError, setSyncError] = useState(""),
+    [syncInProgress, setSyncInProgress] = useState(false),
     [error, setError] = useState(""),
     [input, setInput] = useState(""),
     [name, setName] = useState(
@@ -162,17 +166,28 @@ export function MobileApp() {
     );
     changed();
   };
-  async function sync(conn = current.current) {
+  async function sync(conn = current.current, automatic = false) {
     if (!conn?.deviceId || syncing.current) return;
     syncing.current = true;
-    setSyncError("");
+    let started = false;
     try {
+      // Opening/pairing a phone must not download an old, broad grant. A PC
+      // scope save is the explicit request that enables background receiving.
+      if (automatic && !(await request(conn, "/sync/status")).enabled) return;
+      started = true;
+      setSyncInProgress(true);
+      setSyncError("");
       await synchronize(conn, state.current, setStatus);
       setStatus(
-        state.current.outbox.length ? "部分笔记需要处理" : "文件与笔记已同步",
+        state.current.outbox.length
+          ? "部分笔记需要处理"
+          : allDocuments(state.current).some((d: any) => !d.localOnly)
+            ? "文件与笔记已同步"
+            : "未选择新书，手机已有副本已保留",
       );
       changed();
     } catch (e: any) {
+      if (automatic && !started) return;
       setSyncError(
         e.status === 0
           ? conn.certificateFingerprint
@@ -189,6 +204,7 @@ export function MobileApp() {
       );
     } finally {
       syncing.current = false;
+      setSyncInProgress(false);
     }
   }
   useEffect(() => {
@@ -200,7 +216,7 @@ export function MobileApp() {
         setConnection(conn);
         mobileReader(() => state.current);
         setLoaded(true);
-        if (conn?.deviceId) void sync(conn);
+        if (conn?.deviceId) void sync(conn, true);
         const incoming = new URLSearchParams(location.hash.slice(1)).get(
           "pair",
         );
@@ -211,20 +227,20 @@ export function MobileApp() {
         }
       })
       .catch((e) => setError(e.message));
-    const online = () => void sync();
+    const online = () => void sync(undefined, true);
     window.addEventListener("online", online);
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void sync();
+      if (document.visibilityState === "visible") void sync(undefined, true);
     }, 30000);
     const visibility = () => {
-      if (document.visibilityState === "visible") void sync();
+      if (document.visibilityState === "visible") void sync(undefined, true);
     };
     document.addEventListener("visibilitychange", visibility);
     let nativeListener: Promise<any> | undefined;
     if (Capacitor.isNativePlatform())
       nativeListener = NativeApp.addListener("appStateChange", (s) => {
         setForeground(s.isActive);
-        if (s.isActive) void sync();
+        if (s.isActive) void sync(undefined, true);
       });
     void navigator.storage?.persist?.();
     return () => {
@@ -250,7 +266,7 @@ export function MobileApp() {
           await saveConnection(next);
           setConnection(next);
           setFingerprint("");
-          void sync(next);
+          setStatus("已连接，请在电脑书库选择需要同步的书籍");
         }
       } catch (e: any) {
         if (active) setError(e.message);
@@ -406,7 +422,7 @@ export function MobileApp() {
       reader.current?.clearNativeSelection();
       changed();
       setStatus("笔记已保存在手机，正在等待同步");
-      void sync();
+      void sync(undefined, true);
     } catch (e: any) {
       setError(e.message);
     }
@@ -593,7 +609,7 @@ export function MobileApp() {
     thread.learningRevision = (thread.learningRevision || 0) + 1;
     await persistState(state.current);
     changed();
-    void sync();
+    void sync(undefined, true);
   };
   const editNote = (n: any, m: any) => {
     const book = documents.find((d: any) => d.id === n.workspaceDocumentId);
@@ -681,7 +697,7 @@ export function MobileApp() {
               goalMinutes:
                 state.current.library?.readingData?.goalMinutes || 30,
             }}
-            notice="含手机离线阅读记录，连接电脑后会自动合并"
+            notice="阅读记录随所选书籍同步，离线记录保存在手机"
             onClose={() => setStatsMode(false)}
           />
         </div>
@@ -896,6 +912,19 @@ export function MobileApp() {
               onChange={(e) => setShelfQuery(e.target.value)}
             />
           </div>
+          {c?.deviceId && !documents.length && loaded && (
+            <button
+              className="mobile-sync-hint"
+              onClick={() => setView("settings")}
+            >
+              <Laptop size={21} />
+              <span>
+                <strong>{tr("电脑已配对，书籍由你来选")}</strong>
+                <small>{tr("在电脑书库勾选想带走的书，手机再接收。")}</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          )}
           {lastBook && !shelfQuery && (
             <button className="mobile-continue" onClick={() => open(lastBook)}>
               <div className="continue-cover">
@@ -954,13 +983,16 @@ export function MobileApp() {
                   <MobileCover book={d} />
                   <strong>{d.title.replace(/\.[^.]+$/, "")}</strong>
                   <small>
-                    {d.finishedAt
-                      ? tr("已读完")
-                      : d.readingState?.locator?.percentage != null
-                        ? tr("已读") + ` ${d.readingState.locator.percentage}%`
-                        : d.version
-                          ? tr("未读")
-                          : tr("待下载")}
+                    {d.localOnly
+                      ? tr("仅本机保留")
+                      : d.finishedAt
+                        ? tr("已读完")
+                        : d.readingState?.locator?.percentage != null
+                          ? tr("已读") +
+                            ` ${d.readingState.locator.percentage}%`
+                          : d.version
+                            ? tr("未读")
+                            : tr("待下载")}
                   </small>
                 </button>
               ))}
@@ -971,13 +1003,21 @@ export function MobileApp() {
                 <BookOpen size={42} strokeWidth={1} />
               </div>
               <h2>
-                {tr(shelfQuery ? "没有找到这本书" : "把喜欢的书，放在这里")}
+                {tr(
+                  shelfQuery
+                    ? "没有找到这本书"
+                    : c?.deviceId
+                      ? "只带上你想读的书"
+                      : "把喜欢的书，放在这里",
+                )}
               </h2>
               <p>
                 {tr(
                   shelfQuery
                     ? "试试其他关键词"
-                    : "连接电脑书库，把阅读带在身边。",
+                    : c?.deviceId
+                      ? "连接已经准备好，不会自动下载整座书库。到电脑端选择书籍后，这里就会出现。"
+                      : "连接电脑书库，把阅读带在身边。",
                 )}
               </p>
               {!c?.deviceId && (
@@ -1039,30 +1079,65 @@ export function MobileApp() {
               <ChevronRight size={17} />
             </button>
           </section>
-          <section className="mobile-settings-group">
+          <section className="mobile-settings-group mobile-sync-card">
             <h2>{tr("书库与设备")}</h2>
             <div className="mobile-connection-title">
-              <span
-                className={
-                  c?.deviceId ? "connection-dot connected" : "connection-dot"
-                }
-              />
+              <span className="mobile-device-icon">
+                <Laptop size={24} />
+              </span>
               <div>
                 <strong>
-                  {c?.deviceId ? tr("已连接电脑书库") : tr("尚未连接书库")}
+                  {c?.deviceId ? tr("已配对电脑书库") : tr("尚未连接书库")}
                 </strong>
                 <small>{c?.name || tr("电脑与手机连接同一 Wi-Fi")}</small>
               </div>
+              {c?.deviceId && (
+                <span className="mobile-pair-badge">
+                  <CheckCircle2 size={12} />
+                  {tr("已配对")}
+                </span>
+              )}
             </div>
             {c?.deviceId && (
               <>
+                <div className="mobile-sync-guide">
+                  <strong>{tr("书籍在电脑上选")}</strong>
+                  <p>
+                    {tr(
+                      "书库 → 同步 → 勾选书籍 → 开始同步。也可右键同步单本、文件夹，或选择整个工作区。",
+                    )}
+                  </p>
+                </div>
+                <div className="mobile-sync-metrics">
+                  <div>
+                    <strong>{documents.length}</strong>
+                    <span>{tr("本已下载")}</span>
+                  </div>
+                  <div>
+                    <strong>
+                      {documents.filter((d: any) => d.localOnly).length}
+                    </strong>
+                    <span>{tr("本仅在手机保留")}</span>
+                  </div>
+                  <Smartphone size={26} />
+                </div>
                 <button
-                  className="mobile-settings-row"
+                  className="mobile-settings-row mobile-sync-button"
                   aria-label={tr("同步文件与笔记")}
+                  disabled={syncInProgress}
                   onClick={() => void sync()}
                 >
-                  <RefreshCw size={19} />
-                  <span>{tr("同步文件与笔记")}</span>
+                  <RefreshCw
+                    size={19}
+                    className={syncInProgress ? "spinning" : ""}
+                  />
+                  <span>
+                    {tr(
+                      syncInProgress
+                        ? "正在接收所选书籍…"
+                        : "接收所选书籍与笔记",
+                    )}
+                  </span>
                   <ChevronRight size={17} />
                 </button>
                 {syncError && (
@@ -1070,8 +1145,12 @@ export function MobileApp() {
                     {tr(syncError)}
                   </p>
                 )}
-                <div className="mobile-sync-status" role="status">
-                  {tr(status) || tr("可离线阅读")}
+                <div
+                  className="mobile-sync-status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {tr(status) || tr("等待电脑选择书籍；已下载内容可离线阅读")}
                   {state.current.library?.syncedAt && (
                     <small>
                       {tr("上次同步 ")}
