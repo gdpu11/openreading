@@ -1,5 +1,6 @@
 import { isEpubFormat } from "../formats";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { MobileSheet } from "../mobile/MobileSheet";
 import type { Captured, OutlineItem, Prepared, ReaderAdapter } from "./types";
 import { api, uid } from "../api";
 import { tr } from "../i18n";
@@ -14,6 +15,7 @@ import {
   ArrowLeft,
   ArrowRight,
   MessageCircle,
+  Ellipsis,
 } from "lucide-react";
 import {
   extractBookText,
@@ -45,6 +47,11 @@ export function BookTools({
   encoding = "utf-8",
   mobile = false,
   onAsk,
+  onPanelChange,
+  onNavigate,
+  onResume,
+  children,
+  closeRequest = 0,
   onError,
 }: {
   doc: Prepared;
@@ -53,6 +60,11 @@ export function BookTools({
   encoding?: string;
   mobile?: boolean;
   onAsk?: (s: Captured) => void;
+  onPanelChange?: (open: boolean) => void;
+  onNavigate?: (locator: any) => void;
+  onResume?: () => void;
+  children?: ReactNode;
+  closeRequest?: number;
   onError: (message: string) => void;
 }) {
   const [panel, setPanel] = useState(""),
@@ -90,6 +102,8 @@ export function BookTools({
       window.speechSynthesis?.cancel();
     };
   }, [doc.workspaceDocumentId, doc.version.id, encoding]);
+  useEffect(() => {onPanelChange?.(!!panel);}, [panel,onPanelChange]);
+  useEffect(() => {if (closeRequest) close();}, [closeRequest]);
   const perform = async (action: () => Promise<void>) => {
     setError("");
     try {
@@ -103,6 +117,7 @@ export function BookTools({
   };
   const go = async (locator: any) => {
     const old = reader.current?.getLocation();
+    if (old) onNavigate?.(old);
     await reader.current?.navigateLocation(locator);
     if (old && Object.keys(old).length)
       setHistory((v) => [...v.slice(-49), old]);
@@ -197,6 +212,10 @@ export function BookTools({
       : item.locator.pageIndex !== undefined &&
         item.locator.pageIndex === location?.pageIndex,
   );
+  const panelHost = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mobile && panel === "outline") panelHost.current?.querySelector('[aria-current="location"]')?.scrollIntoView({block: "center"});
+  }, [panel, mobile]);
   const controls: [string, any, string, () => void][] = [
     ["search", Search, "全书搜索", () => setPanel("search")],
     ...(mobile
@@ -229,8 +248,8 @@ export function BookTools({
       : []),
   ];
   return (
-    <div className={"book-tools" + (mobile ? " mobile-book-tools" : "")}>
-      {controls.map(([key, Icon, label, action]) => (
+    <div ref={panelHost} className={"book-tools" + (mobile ? " mobile-book-tools" : "")}>
+      {(mobile ? controls.filter(([key]) => key === "outline" || key === "speech") : controls).map(([key, Icon, label, action]) => (
         <button
           key={key}
           aria-label={tr(label)}
@@ -253,6 +272,8 @@ export function BookTools({
           )}
         </button>
       ))}
+      {children}
+      {mobile && <button aria-label={tr("更多阅读工具")} onClick={() => setPanel("more")}><Ellipsis size={20}/><span>{tr("更多")}</span></button>}
       {onAsk && (
         <button
           aria-label={tr("问本节")}
@@ -270,21 +291,8 @@ export function BookTools({
         </button>
       )}
       {panel && (
-        <section
-          className="book-tools-panel"
-          role="dialog"
-          aria-label={tr(
-            controls.find(([key]) => key === panel)?.[2] || "阅读工具",
-          )}
-        >
-          <header>
-            <h3>
-              {tr(controls.find(([key]) => key === panel)?.[2] || "阅读工具")}
-            </h3>
-            <button aria-label={tr("关闭阅读工具")} onClick={close}>
-              <X size={19} />
-            </button>
-          </header>
+        <ToolPanel mobile={mobile} title={panel === "more" ? "更多阅读工具" : controls.find(([key]) => key === panel)?.[2] || "阅读工具"} onClose={close}>
+          {panel === "more" && <div className="mobile-more-tools">{controls.filter(([key]) => key !== "outline" && key !== "speech").map(([key, Icon, label, action]) => <button key={key} aria-label={tr(label)} onClick={action}><Icon size={22}/><span>{tr(label)}</span></button>)}</div>}
           {error && <p role="alert">{tr(error)}</p>}
           {panel === "search" && (
             <>
@@ -369,6 +377,7 @@ export function BookTools({
                       void perform(async () => {
                         await go(o.locator);
                         close();
+                        if (mobile) onResume?.();
                       })
                     }
                   >
@@ -391,6 +400,7 @@ export function BookTools({
                       void perform(async () => {
                         await reader.current?.navigateLocation(loc);
                         close();
+                        if (mobile) onResume?.();
                       })
                     }
                   >
@@ -412,10 +422,9 @@ export function BookTools({
                 className="primary"
                 onClick={() =>
                   void perform(async () => {
-                    const title = window.prompt(
-                      tr("书签名称"),
-                      doc.title.replace(/\.[^.]+$/, ""),
-                    );
+                    const title = mobile
+                      ? reader.current?.sectionText().trim().replace(/\s+/g, " ").slice(0, 40) || doc.title.replace(/\.[^.]+$/, "")
+                      : window.prompt(tr("书签名称"), doc.title.replace(/\.[^.]+$/, ""));
                     if (!title?.trim()) return;
                     await api(
                       `/documents/${doc.workspaceDocumentId}/bookmarks`,
@@ -447,6 +456,7 @@ export function BookTools({
                           throw Error("书签属于历史版本，请先切换到对应版本");
                         await go(m.locator);
                         close();
+                        if (mobile) onResume?.();
                       })
                     }
                   >
@@ -580,8 +590,12 @@ export function BookTools({
               )}
             </>
           )}
-        </section>
+        </ToolPanel>
       )}
     </div>
   );
+}
+function ToolPanel({mobile, title, onClose, children}: {mobile: boolean; title: string; onClose: () => void; children: ReactNode}) {
+  if (mobile) return <MobileSheet title={title} closeLabel="关闭阅读工具" onClose={onClose} className="book-tools-panel">{children}</MobileSheet>;
+  return <section className="book-tools-panel" role="dialog" aria-label={tr(title)}><header><h3>{tr(title)}</h3><button aria-label={tr("关闭阅读工具")} onClick={onClose}><X size={19}/></button></header>{children}</section>;
 }

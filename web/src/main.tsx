@@ -1927,6 +1927,29 @@ function App() {
                   </div>
                   <div className="document-timer" ref={setTimerContainer} />
                   <div className="document-actions">
+                    <button
+                      title={tr(
+                        prefs.theme === "dark"
+                          ? "切换为白色主题"
+                          : "切换为黑色主题",
+                      )}
+                      aria-label={tr(
+                        prefs.theme === "dark"
+                          ? "切换为白色主题"
+                          : "切换为黑色主题",
+                      )}
+                      onClick={() =>
+                        updatePref({
+                          theme: prefs.theme === "dark" ? "light" : "dark",
+                        })
+                      }
+                    >
+                      {prefs.theme === "dark" ? (
+                        <Sun size={18} />
+                      ) : (
+                        <Moon size={18} />
+                      )}
+                    </button>
                     {readerTarget && (
                       <button
                         title={tr("阅读设置")}

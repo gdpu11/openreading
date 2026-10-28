@@ -1,4 +1,4 @@
-import type { ReadingEvent } from "../reading/data";
+import type { ReadingData, ReadingEvent } from "../reading/data";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Directory, Filesystem, Encoding } from "@capacitor/filesystem";
 const Vault = registerPlugin<{
@@ -7,6 +7,26 @@ const Vault = registerPlugin<{
   clear: () => Promise<void>;
 }>("DeviceVault");
 const native = Capacitor.isNativePlatform();
+const OfflineFiles = registerPlugin<{
+  has: (v: { key: string }) => Promise<{ exists: boolean }>;
+  get: (v: { key: string }) => Promise<{ exists: boolean; uri?: string }>;
+  commit: (v: { key: string; total: number }) => Promise<void>;
+}>("OfflineFiles");
+export const nativeChunkCommit = () =>
+  native && Capacitor.isPluginAvailable("OfflineFiles");
+export async function commitChunks(key: string, total: number) {
+  try {
+    await OfflineFiles.commit({ key, total });
+  } catch (e: any) {
+    if (e.code === "INTEGRITY") await clearChunks(key);
+    throw e;
+  }
+}
+export async function hasBlob(key: string): Promise<boolean> {
+  if (!/^[a-f0-9]{64}$/.test(key)) throw Error("无效的文件校验值");
+  if (nativeChunkCommit()) return (await OfflineFiles.has({ key })).exists;
+  return !!(await cachedBlob(key));
+}
 async function db() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const r = indexedDB.open("open-reading-mobile", 1);
@@ -52,6 +72,8 @@ export type MobileState = {
   library: any;
   outbox: any[];
   readingEvents?: ReadingEvent[];
+  readingData?: ReadingData;
+  readingSyncedAt?: string;
   drafts: Record<string, string>;
   bookPreferences?: Record<string, any>;
   lastBook?: string;
@@ -138,6 +160,13 @@ export async function cachedBlob(key: string): Promise<Blob | undefined> {
   if (!/^[a-f0-9]{64}$/.test(key)) throw Error("无效的文件校验值");
   if (!native) return idb("blob:" + key);
   try {
+    if (nativeChunkCommit()) {
+      const file = await OfflineFiles.get({ key });
+      if (!file.exists || !file.uri) return undefined;
+      const response = await fetch(Capacitor.convertFileSrc(file.uri));
+      if (!response.ok) throw Error("无法读取离线文件");
+      return response.blob();
+    }
     const r = await Filesystem.readFile({
       directory: Directory.Data,
       path: "openreading/files/" + key,
@@ -277,24 +306,30 @@ export async function coverCache(
   return idb("cover:" + key, value);
 }
 export async function clearFiles() {
-  if (native) {
-    try {
-      await Filesystem.rmdir({
-        directory: Directory.Data,
-        path: "openreading",
-        recursive: true,
+  // Clear only after queued snapshots finish, so a pending write cannot
+  // resurrect a removed connection's offline state.
+  const task = serial.then(async () => {
+    if (native) {
+      try {
+        await Filesystem.rmdir({
+          directory: Directory.Data,
+          path: "openreading",
+          recursive: true,
+        });
+      } catch {}
+    }
+    {
+      const d = await db();
+      await new Promise<void>((resolve, reject) => {
+        const tx = d.transaction("data", "readwrite");
+        tx.objectStore("data").clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
       });
-    } catch {}
-  }
-  {
-    const d = await db();
-    await new Promise<void>((resolve, reject) => {
-      const tx = d.transaction("data", "readwrite");
-      tx.objectStore("data").clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    d.close();
-  }
-  generation = 0;
+      d.close();
+    }
+    generation = 0;
+  });
+  serial = task.catch(() => {});
+  await task;
 }

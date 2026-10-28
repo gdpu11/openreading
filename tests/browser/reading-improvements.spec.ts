@@ -248,7 +248,7 @@ test("desktop searches all PDF pages and restores book settings; notes ignore li
   expect(errors).toEqual([]);
 });
 
-async function sampleEPUB() {
+async function sampleEPUB(long = false) {
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip");
   zip.file(
@@ -277,10 +277,83 @@ async function sampleEPUB() {
   ])
     zip.file(
       `OEBPS/${name}.xhtml`,
-      `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title></head><body><h1>${title}</h1><p>${text}</p></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title></head><body><h1>${title}</h1><p>${text}</p>${long ? Array.from({length:32},(_,i)=>`<p>段落 ${i+1}。${text.repeat(3)}</p>`).join("") : ""}</body></html>`,
     );
   return zip.generateAsync({ type: "nodebuffer" });
 }
+test("reader toolbar switches EPUB colors and remembers the book theme", async ({
+  page,
+}) => {
+  await login(page);
+  const data = await setupBooks(page);
+  const me = await (await page.request.get(origin + "/api/me")).json();
+  const imported = await page.request.post(
+    `${origin}/api/workspaces/${data.workspace.id}/imports`,
+    {
+      headers: { "X-CSRF-Token": me.csrf },
+      multipart: {
+        files: {
+          name: "主题测试.epub",
+          mimeType: "application/epub+zip",
+          buffer: await sampleEPUB(),
+        },
+      },
+    },
+  );
+  expect(imported.ok()).toBeTruthy();
+  const scan = (await imported.json()).scan;
+  if (scan?.id)
+    await expect
+      .poll(
+        async () =>
+          (
+            await (
+              await page.request.get(`${origin}/api/scans/${scan.id}`)
+            ).json()
+          ).state,
+      )
+      .toBe("completed");
+  await page.reload();
+  const openBook = async () => {
+    await page
+      .locator(".file-item")
+      .filter({ hasText: "主题测试.epub" })
+      .click();
+    await expect(
+      page.frameLocator(".epub-container iframe").locator("body"),
+    ).toContainText("第一章");
+  };
+  await openBook();
+  const body = page.frameLocator(".epub-container iframe").locator("body");
+  const dark = page.getByRole("button", {
+    name: "切换为黑色主题",
+    exact: true,
+  });
+  const light = page.getByRole("button", {
+    name: "切换为白色主题",
+    exact: true,
+  });
+  await dark.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(body).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await expect(body.locator("p")).toHaveCSS("color", "rgb(238, 238, 238)");
+  await page.screenshot({ path: join(evidence, "reader-theme-dark.png") });
+  // Opening another book must use its own theme, then restore this book's choice.
+  await page.locator(".file-item").filter({ hasText: "阅读与思考.md" }).click();
+  await expect(dark).toBeVisible();
+  await openBook();
+  await expect(light).toBeVisible();
+  await expect(body).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await page.reload();
+  await openBook();
+  await expect(light).toBeVisible();
+  await light.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(body).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(body.locator("p")).toHaveCSS("color", "rgb(32, 32, 32)");
+  await page.screenshot({ path: join(evidence, "reader-theme-light.png") });
+});
+
 test("mobile bookshelf, offline chapter navigation and settings-only sync", async ({
   browser,
 }) => {
@@ -304,6 +377,8 @@ test("mobile bookshelf, offline chapter navigation and settings-only sync", asyn
     ).toBeVisible();
     await expect(page.getByLabel("同步文件与笔记")).toHaveCount(0);
     await page.getByRole("button", { name: "设置", exact: true }).click();
+    await expect(page.getByRole("button",{name:"扫描电脑二维码",exact:true})).toHaveCount(0);
+    await page.getByRole("button",{name:"电脑与同步",exact:true}).click();
     await expect(
       page.getByRole("button", { name: "扫描电脑二维码", exact: true }),
     ).toBeVisible();
@@ -393,12 +468,21 @@ test("mobile bookshelf, offline chapter navigation and settings-only sync", asyn
       fullPage: true,
     });
     await page.getByRole("button", { name: "设置", exact: true }).click();
-    await expect(page.getByLabel("同步文件与笔记")).toBeVisible();
+    await expect(page.getByLabel("同步文件与笔记")).toHaveCount(0);
+    await page.getByRole("button",{name:"阅读数据",exact:true}).click();
+    const statsBox=(await page.locator(".reading-stats-overlay").boundingBox())!;
+    expect(statsBox.y).toBe(0);expect(statsBox.height).toBe(844);
+    await expect(page.getByRole("button",{name:"导出数据",exact:true})).toHaveCSS("white-space","nowrap");
+    await page.screenshot({path:join(evidence,"mobile-statistics-fullscreen.png")});
+    await page.getByRole("button",{name:"关闭阅读数据",exact:true}).click();
+
     await page.screenshot({
       path: join(evidence, "mobile-settings-light.png"),
       fullPage: true,
     });
+    await page.getByRole("button",{name:"通用设置",exact:true}).click();
     await page.getByLabel("深色模式", { exact: true }).check();
+    await page.getByRole("button",{name:"返回设置",exact:true}).click();
     await page.getByRole("button", { name: "书架", exact: true }).click();
     await page.screenshot({
       path: join(evidence, "mobile-bookshelf-dark.png"),
@@ -406,6 +490,30 @@ test("mobile bookshelf, offline chapter navigation and settings-only sync", asyn
     });
     await page.locator(".mobile-continue").click();
     await expect(page.locator(".epub-container iframe")).toBeVisible();
+    const frameBody=page.frameLocator(".epub-container iframe").locator("body");
+    await expect(page.locator(".mobile-app")).toHaveAttribute("data-chrome-visible","false");
+    const readerHeight=await page.locator(".mobile-reader-wrap").evaluate(el=>el.clientHeight);
+    await page.screenshot({path:join(evidence,"mobile-reader-immersive.png")});
+    await page.touchscreen.tap(195,340);
+    await expect(page.locator(".mobile-app")).toHaveAttribute("data-chrome-visible","true");
+    expect(await page.locator(".mobile-reader-wrap").evaluate(el=>el.clientHeight)).toBe(readerHeight);
+    await page.screenshot({path:join(evidence,"mobile-reader-menu.png")});
+    await page.touchscreen.tap(195,340);
+    await expect(page.locator(".mobile-app")).toHaveAttribute("data-chrome-visible","false");
+    const touch=await context.newCDPSession(page);
+    const box=(await page.locator(".epub-container iframe").boundingBox())!;
+    const swipe=async (left:boolean)=>{
+      const x1=box.x+(left?box.width*0.8:box.width*0.2),x2=box.x+(left?box.width*0.2:box.width*0.8),y=box.y+box.height*0.55;
+      await touch.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:x1,y}]});
+      await touch.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x2,y}]});
+      await touch.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+    };
+    await swipe(true);
+    await expect(frameBody).toContainText("不要急着给出答案");
+    await expect(page.locator(".mobile-app")).toHaveAttribute("data-chrome-visible","false");
+    await swipe(false);
+    await expect(frameBody).toContainText("阅读让我们");
+    await page.touchscreen.tap(195,340);
     await page.getByRole("button", { name: "目录", exact: true }).click();
     await page
       .getByRole("button", { name: "第二章 回到原文", exact: true })
@@ -413,11 +521,15 @@ test("mobile bookshelf, offline chapter navigation and settings-only sync", asyn
     await expect(
       page.frameLocator(".epub-container iframe").locator("body"),
     ).toContainText("不要急着给出答案");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".mobile-app")).toHaveAttribute("data-chrome-visible","false");
+    await page.touchscreen.tap(195,340);
     await page.getByRole("button", { name: "目录", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "第二章 回到原文", exact: true }),
     ).toHaveAttribute("aria-current", "location");
     await page.getByLabel("关闭阅读工具").click();
+    await page.getByRole("button", { name: "更多阅读工具", exact: true }).click();
     await page.getByRole("button", { name: "全书搜索", exact: true }).click();
     await page.getByLabel("全书关键词").fill("思想相遇");
     await page.getByRole("button", { name: "搜索整本书", exact: true }).click();
@@ -557,4 +669,118 @@ test("macOS OCR recognizes a generated page locally", async ({ page }) => {
     resolve("desktop/runtime"),
   );
   expect(text).toContain("LOCAL READING");
+});
+
+test("mobile reading gestures, sheets, jump recovery and per-book typography", async ({browser}) => {
+  test.setTimeout(90000);
+  const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const page = await context.newPage(), errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  try {
+    await page.addInitScript(() => localStorage.setItem("open-reading-language","zh"));
+    await page.goto(origin + "/mobile");
+    const bytes = await sampleEPUB(true), hash = createHash("sha256").update(bytes).digest("hex");
+    const pdf = await PDFDocument.create();pdf.addPage([400,600]);pdf.addPage([400,600]);
+    const pdfBytes = await pdf.save(), pdfHash = createHash("sha256").update(pdfBytes).digest("hex");
+    await page.evaluate(async ({bytes,hash,pdfBytes,pdfHash}) => {
+      const db = await new Promise<IDBDatabase>((resolve,reject) => {const r=indexedDB.open("open-reading-mobile",1);r.onupgradeneeded=()=>r.result.createObjectStore("data");r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      const version={id:"long-epub-v",contentHash:hash};
+      const book={id:"long-epub",workspaceDocumentId:"long-epub",title:"阅读的意义.epub",format:"epub",version,versions:[version],threads:[],bookmarks:[],manifests:[]};
+      await new Promise<void>((resolve,reject)=>{const tx=db.transaction("data","readwrite"),store=tx.objectStore("data");const pdfVersion={id:"pdf-v",contentHash:pdfHash},pdfBook={...book,id:"touch-pdf",workspaceDocumentId:"touch-pdf",title:"触控测试.pdf",format:"pdf",version:pdfVersion,versions:[pdfVersion]};store.put({library:{workspaces:[{id:"local",name:"本机书库",documents:[book,pdfBook]}]},lastBook:book.id,outbox:[],drafts:{},bookPreferences:{"touch-pdf":{pdfScale:2}}},"state");store.put(new Blob([new Uint8Array(bytes)]),"blob:"+hash);store.put(new Blob([new Uint8Array(pdfBytes)]),"blob:"+pdfHash);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();
+    },{bytes:Array.from(bytes),hash,pdfBytes:Array.from(pdfBytes),pdfHash});
+    await page.reload();
+    await page.locator(".mobile-continue").click();
+    const app=page.locator(".mobile-app"), pagination=page.locator(".reader-page-number"), body=page.frameLocator(".epub-container iframe").locator("body");
+    await expect(pagination).toHaveText(/本章 1 \/ \d+/);
+    const first=await pagination.textContent();
+    for(let i=0;i<4;i++) {
+      const before=await pagination.textContent();
+      await page.touchscreen.tap(345,340);
+      await expect(pagination).not.toHaveText(before!);
+      await expect(app).toHaveAttribute("data-chrome-visible","false");
+    }
+    const fifth=await pagination.textContent();
+    await page.touchscreen.tap(40,340);
+    await expect(pagination).not.toHaveText(fifth!);
+    expect(await pagination.textContent()).not.toBe(first);
+    await page.touchscreen.tap(195,340);
+    await expect(app).toHaveAttribute("data-chrome-visible","true");
+    await expect(page.locator(".mobile-book-tools > button")).toHaveCount(5);
+    await page.getByRole("button",{name:"阅读设置",exact:true}).click();
+    await expect(page.getByRole("dialog",{name:"阅读设置",exact:true})).toBeVisible();
+    const font=page.getByLabel("手机阅读字号"), size=Number(await font.inputValue());
+    await page.getByRole("button",{name:"放大字号",exact:true}).click();
+    await expect(font).toHaveValue(String(size+1));
+    await page.getByRole("button",{name:"纸张",exact:true}).click();
+    await expect(body).toHaveCSS("background-color","rgb(244, 236, 216)");
+    await expect(body).toHaveCSS("font-size",`${size+1}px`);
+    await expect(pagination).not.toHaveText(/本章 1 \/ /);
+    await page.screenshot({path:join(evidence,"mobile-reading-settings.png")});
+    await page.getByRole("button",{name:"收起阅读设置",exact:true}).click({position:{x:195,y:160}});
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button",{name:"下一章",exact:true}).click();
+    await expect(body.locator("h1")).toHaveText("第二章 回到原文");
+    await expect(app).toHaveAttribute("data-chrome-visible","false");
+    await page.getByRole("button",{name:"返回跳转前位置",exact:true}).click();
+    await expect(body.locator("h1")).toHaveText("第一章 留下思考");
+    await expect(pagination).not.toHaveText(first!);
+    await page.touchscreen.tap(195,340);
+    await page.getByRole("button",{name:"目录",exact:true}).click();
+    await expect(page.getByRole("button",{name:"第一章 留下思考",exact:true})).toHaveAttribute("aria-current","location");
+    await page.getByRole("button",{name:"第二章 回到原文",exact:true}).click();
+    await expect(body.locator("h1")).toHaveText("第二章 回到原文");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.touchscreen.tap(195,340);
+    const progress=page.getByLabel("整本阅读进度"), bounds=(await progress.boundingBox())!;
+    const beforeSeek=await pagination.textContent();
+    await page.mouse.move(bounds.x+bounds.width*.5,bounds.y+bounds.height*.5);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x,bounds.y+bounds.height*.5,{steps:5});
+    expect(await pagination.textContent()).toBe(beforeSeek); // preview must not navigate
+    await page.mouse.up();
+    await expect(body.locator("h1")).toHaveText("第一章 留下思考");
+    await expect(pagination).toHaveText(/本章 1 \/ \d+/);
+    await page.getByRole("button",{name:"返回跳转前位置",exact:true}).click();
+    await expect(body.locator("h1")).toHaveText("第二章 回到原文");
+    await page.getByRole("button",{name:"更多阅读工具",exact:true}).click();
+    await page.getByRole("button",{name:"书签",exact:true}).click();
+    // Mobile bookmarks are one tap and never require a blocking native prompt.
+    page.on("dialog",()=>{throw Error("unexpected native prompt");});
+    await page.getByRole("button",{name:"收藏当前位置",exact:true}).click();
+    await expect(page.getByRole("button",{name:"删除书签",exact:true})).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.screenshot({path:join(evidence,"mobile-reading-menu.png")});
+    await body.locator("p").first().evaluate(el => {
+      const range=document.createRange();range.selectNodeContents(el);
+      const selection=window.getSelection()!;selection.removeAllRanges();selection.addRange(range);
+    });
+    await expect(page.getByRole("dialog",{name:"选中文字",exact:true})).toBeVisible();
+    await expect(page.getByLabel("手机笔记",{exact:true})).toHaveCount(0);
+    await page.getByRole("button",{name:"写笔记",exact:true}).click();
+    await expect(page.getByLabel("手机笔记",{exact:true})).toBeFocused();
+    await page.getByLabel("手机笔记",{exact:true}).fill("回到原文，把理解留下来。");
+    await page.getByRole("button",{name:"保存手机笔记",exact:true}).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button",{name:"返回书库",exact:true}).click();
+    await page.locator(".mobile-continue").click();
+    await expect(body).toHaveCSS("background-color","rgb(244, 236, 216)");
+    await expect(body).toHaveCSS("font-size",`${size+1}px`);
+    await page.screenshot({path:join(evidence,"mobile-reading-paper.png")});
+    await page.touchscreen.tap(195,340);
+    await page.getByRole("button",{name:"返回书库",exact:true}).click();
+    await page.getByRole("button",{name:"触控测试.pdf",exact:true}).click();
+    await expect(page.locator(".reader-page-number")).toHaveText("1 / 2 页");
+    await expect(app).toHaveAttribute("data-chrome-visible","false");
+    await page.touchscreen.tap(195,340);
+    await expect(app).toHaveAttribute("data-chrome-visible","true");
+    await page.getByRole("button",{name:"阅读设置",exact:true}).click();
+    await page.getByRole("button",{name:"适合屏幕",exact:true}).click();
+    await page.getByRole("button",{name:"关闭阅读设置",exact:true}).click();
+    await page.touchscreen.tap(345,340);
+    await expect(page.locator(".reader-page-number")).toHaveText("2 / 2 页");
+    await page.touchscreen.tap(40,340);
+    await expect(page.locator(".reader-page-number")).toHaveText("1 / 2 页");
+    expect(errors).toEqual([]);
+  } finally {await context.close();}
 });

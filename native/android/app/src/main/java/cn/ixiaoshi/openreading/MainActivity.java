@@ -5,6 +5,8 @@ public class MainActivity extends BridgeActivity {
  @Override public void onCreate(Bundle savedInstanceState) {
   registerPlugin(DeviceVaultPlugin.class);
   registerPlugin(LocalSyncPlugin.class);
+  registerPlugin(OfflineFilesPlugin.class);
+  registerPlugin(ReadingDisplayPlugin.class);
   super.onCreate(savedInstanceState);
  }
 }

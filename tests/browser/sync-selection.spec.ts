@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 test.use({ trace: "off", screenshot: "off" });
-test("desktop selects file types and individual files, and updates an existing phone without pairing again", async ({
+test("settings only pairs phones; shelf owns selected books and workspace sync", async ({
   browser,
 }) => {
   test.setTimeout(60000);
@@ -100,22 +100,19 @@ test("desktop selects file types and individual files, and updates an existing p
       },
     });
     const page = await pc.newPage();
-    await page.addInitScript(() =>
-      localStorage.setItem("open-reading-language", "zh"),
-    );
+    await pc.request.put(base + "/api/preferences", {headers,data:{activeWorkspaceId:ws.id}});
+    await page.addInitScript(() => {
+      localStorage.setItem("open-reading-language", "zh");
+      (window as any).openReadingDesktop = {onClosing:()=>()=>{},onThread:()=>()=>{},setLanguage:async()=>{},openBook:async()=>{}};
+    });
     await page.goto(base);
     await page
       .getByRole("button", { name: "设置", exact: true })
       .first()
       .click();
     await page.getByRole("button", { name: "手机与同步", exact: true }).click();
-    const picker = page.locator(".sync-scope").first();
-    await expect(picker).toContainText("当前选中 0 个文件");
-    await picker.getByLabel("另一个工作区", { exact: true }).uncheck();
-    await picker.getByLabel("文件选择方式").selectOption("formats");
-    await picker.getByLabel("TXT", { exact: true }).uncheck();
-    await picker.getByLabel("Markdown", { exact: true }).uncheck();
-    await expect(picker).toContainText("当前选中 2 个文件");
+    await expect(page.locator(".sync-scope")).toHaveCount(0);
+    await expect(page.getByRole("button",{name:"修改同步范围",exact:true})).toHaveCount(0);
     const grantResponse = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/pair/grants") && r.request().method() === "POST",
@@ -138,7 +135,7 @@ test("desktop selects file types and individual files, and updates an existing p
       .getByRole("button", { name: "确认授权此设备", exact: true })
       .click();
     await expect(
-      page.getByText("已配对。返回书库选择同步范围并开始同步。"),
+      page.getByText("已配对。可以在手机搜索选书，或返回电脑书库选择同步范围。"),
     ).toBeVisible();
     const readLibrary = async () => {
       const response = await pc.request.get(base + "/api/sync/library", {
@@ -149,62 +146,22 @@ test("desktop selects file types and individual files, and updates an existing p
         (w: any) => w.documents,
       );
     };
-    expect((await readLibrary()).map((d: any) => d.format).sort()).toEqual([
-      "epub",
-      "pdf",
-    ]);
-    await page
-      .getByRole("button", { name: "修改同步范围", exact: true })
-      .click();
-    const editor = page.locator(".device-scope-editor");
-    await expect(editor.getByLabel("文件选择方式")).toHaveValue("formats");
-    await expect(editor.getByLabel("PDF", { exact: true })).toBeChecked();
-    await editor.getByLabel("文件选择方式").selectOption("manual");
-    const save = editor.getByRole("button", {
-      name: "保存同步范围",
-      exact: true,
-    });
-    await expect(save).toBeEnabled();
-    await editor.getByLabel("筛选文件类型").selectOption("epub");
-    await editor
-      .getByRole("button", { name: "勾选当前列表", exact: true })
-      .click();
-    await expect(editor).toContainText("当前选中 1 个文件");
-    await editor.getByLabel("筛选文件类型").selectOption("");
-    await editor.getByLabel("搜索同步文件").fill("文字");
-    await editor
-      .getByRole("button", { name: "勾选当前列表", exact: true })
-      .click();
-    await expect(editor).toContainText("当前选中 2 个文件");
-    await editor
-      .getByRole("button", { name: "取消勾选当前列表", exact: true })
-      .click();
-    await expect(editor).toContainText("当前选中 1 个文件");
-    await save.click();
-    await expect(
-      page.getByText("同步范围已保存，下次手机同步时生效。"),
-    ).toBeVisible();
-    const manual = await readLibrary();
-    expect(manual).toHaveLength(1);
-    expect(manual[0].title).toContain("可靠接口.epub");
+    expect(await readLibrary()).toHaveLength(0);
+    await page.getByRole("dialog",{name:"设置",exact:true}).getByRole("button",{name:"关闭",exact:true}).click();
+    await page.getByRole("button",{name:"同步到手机",exact:true}).click();
+    const panel=page.getByRole("region",{name:"选择手机同步书籍"});
+    await page.getByRole("checkbox",{name:/选择同步 .*可靠接口.epub/}).check();
+    await page.getByRole("checkbox",{name:/选择同步 .*文字.txt/}).check();
+    await panel.getByRole("button",{name:"开始同步",exact:true}).click();
+    await expect(panel.getByRole("button",{name:"开始同步",exact:true})).toBeEnabled();
+    expect((await readLibrary()).map((d:any)=>d.format).sort()).toEqual(["epub","txt"]);
     await page.reload();
-    await page
-      .getByRole("button", { name: "设置", exact: true })
-      .first()
-      .click();
-    await page.getByRole("button", { name: "手机与同步", exact: true }).click();
-    await page
-      .getByRole("button", { name: "修改同步范围", exact: true })
-      .click();
-    await expect(editor.getByLabel("文件选择方式")).toHaveValue("manual");
-    await expect(editor.getByLabel(/可靠接口.epub/)).toBeChecked();
-    await editor.getByLabel("文件选择方式").selectOption("all");
-    await editor
-      .getByRole("button", { name: "保存同步范围", exact: true })
-      .click();
-    await expect(
-      page.getByText("同步范围已保存，下次手机同步时生效。"),
-    ).toBeVisible();
+    await page.getByRole("button",{name:"同步到手机",exact:true}).click();
+    await expect(page.getByRole("checkbox",{name:/选择同步 .*可靠接口.epub/})).toBeChecked();
+    await expect(page.getByRole("checkbox",{name:/选择同步 .*文字.txt/})).toBeChecked();
+    await panel.getByLabel("同步整个工作区",{exact:false}).check();
+    await panel.getByRole("button",{name:"开始同步",exact:true}).click();
+    await expect(panel.getByRole("button",{name:"开始同步",exact:true})).toBeEnabled();
     expect(await readLibrary()).toHaveLength(4);
     expect(await page.pageErrors()).toEqual([]);
   } finally {

@@ -42,6 +42,7 @@ type credential struct {
 	Version string
 }
 type Server struct {
+	syncProgress   map[string]syncProgress
 	mcpControlMu   sync.Mutex
 	mcpMu          sync.RWMutex
 	mcpConfig      mcpConfig
@@ -253,6 +254,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err, rid)
 			return
 		}
+		s.observeSync(device, "", "", -1)
 		r = r.WithContext(context.WithValue(r.Context(), deviceContextKey{}, device))
 		s.mux.ServeHTTP(w, r)
 		return

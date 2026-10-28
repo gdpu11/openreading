@@ -1,3 +1,9 @@
+import { ComputerLibrary } from "./ComputerLibrary";
+import { SettingsMenu, settingsTitle, type SettingsPage } from "./SettingsMenu";
+import { ReadingDisplay, readingDisplayAvailable } from "./readingDisplay";
+import { MobileSheet } from "./MobileSheet";
+import { ReaderSettings } from "./ReaderSettings";
+import { isEpubFormat } from "../formats";
 import { NotesCenter } from "../learning/NotesCenter";
 import { BookTools } from "../readers/BookTools";
 import { MobileCover } from "./MobileCover";
@@ -9,6 +15,7 @@ import {
   ChevronRight,
   Plus,
   SlidersHorizontal,
+  Undo2,
   Bookmark,
   ArrowUpRight,
   Laptop,
@@ -23,7 +30,7 @@ import { tr, locale } from "../i18n";
 import { ReadingStats } from "../reading/ReadingStats";
 import type { ReadingEvent } from "../reading/data";
 import { useEffect, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, SystemBars } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { CapacitorBarcodeScanner } from "@capacitor/barcode-scanner";
 import {
@@ -61,10 +68,13 @@ import {
   allDocuments,
   mobileReader,
   pairPayload,
+  reconnect,
   randomToken,
   remote,
   request,
   synchronize,
+  synchronizeReading,
+  mobileReadingData,
 } from "./sync";
 import { ordPath, ordForm, ordResponse, saveORD } from "../ord";
 import "./mobile.css";
@@ -75,7 +85,7 @@ const base: ReaderPreferences = {
   fontFamily: "system-ui",
   pdfScale: 1,
   pdfRotation: 0,
-  epubFlow: "scrolled-doc",
+  epubFlow: "paginated",
   encoding: "utf-8",
   leftWidth: 0,
   rightWidth: 0,
@@ -87,6 +97,14 @@ export function MobileApp() {
     [ordBusy, setOrdBusy] = useState(false),
     [loaded, setLoaded] = useState(false),
     [statsMode, setStatsMode] = useState(false),
+    [settingsPage, setSettingsPage] = useState<SettingsPage>("home"),
+    [readerChrome, setReaderChrome] = useState(false),
+    [readerLocation, setReaderLocation] = useState<any>({}),
+    [jumpBack, setJumpBack] = useState<any>(null),
+    [composing, setComposing] = useState(false),
+    [readingNotice, setReadingNotice] = useState(""),
+    [toolsOpen, setToolsOpen] = useState(false),
+    [closeTools, setCloseTools] = useState(0),
     [foreground, setForeground] = useState(true),
     [view, setView] = useState<"library" | "notes" | "settings">("library"),
     [shelfQuery, setShelfQuery] = useState(""),
@@ -95,12 +113,15 @@ export function MobileApp() {
     [readerSettings, setReaderSettings] = useState(false),
     [progressHost, setProgressHost] = useState<HTMLDivElement | null>(null),
     [pageHost, setPageHost] = useState<HTMLSpanElement | null>(null),
+    [timerHost, setTimerHost] = useState<HTMLDivElement | null>(null),
     [showBookNotes, setShowBookNotes] = useState(false),
     [doc, setDoc] = useState<Prepared | null>(null),
     [version, setVersion] = useState(0),
     [status, setStatus] = useState(""),
     [syncError, setSyncError] = useState(""),
     [syncInProgress, setSyncInProgress] = useState(false),
+    [readingSyncInProgress, setReadingSyncInProgress] = useState(false),
+    [readingSyncError, setReadingSyncError] = useState(""),
     [error, setError] = useState(""),
     [input, setInput] = useState(""),
     [name, setName] = useState(
@@ -122,6 +143,9 @@ export function MobileApp() {
     ordInput = useRef<HTMLInputElement>(null),
     reader = useRef<ReaderAdapter>(null),
     syncing = useRef(false),
+    readingSyncing = useRef(0),
+    removing = useRef(false),
+    pendingSync = useRef<Connection | null>(null),
     alive = useRef(true),
     current = useRef<Connection | null>(null);
   current.current = c;
@@ -138,6 +162,7 @@ export function MobileApp() {
   const positionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordPosition = (locator: any) => {
     if (!doc) return;
+    setReaderLocation(locator);
     const target = state.current.library?.workspaces
       .flatMap((w: any) => w.documents)
       .find((d: any) => d.id === doc.workspaceDocumentId);
@@ -161,20 +186,41 @@ export function MobileApp() {
   );
   const recordReading = (event: ReadingEvent) => {
     (state.current.readingEvents ||= []).push(event);
-    void persistState(state.current).catch(() =>
-      setError("阅读记录保存失败，请检查手机存储空间"),
-    );
+    void persistState(state.current)
+      .then(() => syncTimes())
+      .catch(() => setError("阅读记录保存失败，请检查手机存储空间"));
     changed();
   };
+  async function syncTimes(conn = current.current) {
+    if (!conn?.deviceId || removing.current) return;
+    readingSyncing.current++;
+    setReadingSyncInProgress(true);
+    try {
+      await synchronizeReading(conn, state.current);
+      setReadingSyncError("");
+      changed();
+    } catch (e: any) {
+      setReadingSyncError(
+        e.status === 401
+          ? "手机授权已失效，阅读时间仍保存在本机，请重新配对"
+          : "阅读时间暂未同步，已保存在本机，连接电脑后自动重试",
+      );
+    } finally {
+      readingSyncing.current--;
+      setReadingSyncInProgress(readingSyncing.current > 0);
+    }
+  }
   async function sync(conn = current.current, automatic = false) {
-    if (!conn?.deviceId || syncing.current) return;
+    if (!conn?.deviceId || removing.current) return false;
+    if (syncing.current) {if(!automatic) pendingSync.current=conn;return false;}
     syncing.current = true;
     let started = false;
     try {
       // Opening/pairing a phone must not download an old, broad grant. A PC
-      // scope save is the explicit request that enables background receiving.
-      if (automatic && !(await request(conn, "/sync/status")).enabled) return;
+      // scope save or confirmed phone selection explicitly enables receiving.
+      if (automatic && !(await request(conn, "/sync/status")).enabled) return false;
       started = true;
+      void syncTimes(conn);
       setSyncInProgress(true);
       setSyncError("");
       await synchronize(conn, state.current, setStatus);
@@ -186,8 +232,9 @@ export function MobileApp() {
             : "未选择新书，手机已有副本已保留",
       );
       changed();
+      return true;
     } catch (e: any) {
-      if (automatic && !started) return;
+      if (automatic && !started) return false;
       setSyncError(
         e.status === 0
           ? conn.certificateFingerprint
@@ -202,9 +249,13 @@ export function MobileApp() {
           ? "同步已中断，进度已保存 · 笔记等待同步"
           : "同步已中断，进度已保存，下次将继续",
       );
+      return false;
     } finally {
       syncing.current = false;
       setSyncInProgress(false);
+      const pending = pendingSync.current;
+      pendingSync.current = null;
+      if (pending && alive.current) void sync(pending);
     }
   }
   useEffect(() => {
@@ -217,30 +268,34 @@ export function MobileApp() {
         mobileReader(() => state.current);
         setLoaded(true);
         if (conn?.deviceId) void sync(conn, true);
+        if (conn?.deviceId) void syncTimes(conn);
         const incoming = new URLSearchParams(location.hash.slice(1)).get(
           "pair",
         );
         if (incoming) {
-          setView("settings");
+          setView("settings");setSettingsPage("sync");
           setInput(location.href);
           history.replaceState(null, "", location.pathname);
         }
       })
       .catch((e) => setError(e.message));
-    const online = () => void sync(undefined, true);
+    const online = () => {
+      void sync(undefined, true);
+      void syncTimes();
+    };
     window.addEventListener("online", online);
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void sync(undefined, true);
+      if (document.visibilityState === "visible") online();
     }, 30000);
     const visibility = () => {
-      if (document.visibilityState === "visible") void sync(undefined, true);
+      if (document.visibilityState === "visible") online();
     };
     document.addEventListener("visibilitychange", visibility);
     let nativeListener: Promise<any> | undefined;
     if (Capacitor.isNativePlatform())
       nativeListener = NativeApp.addListener("appStateChange", (s) => {
         setForeground(s.isActive);
-        if (s.isActive) void sync(undefined, true);
+        if (s.isActive) online();
       });
     void navigator.storage?.persist?.();
     return () => {
@@ -266,7 +321,7 @@ export function MobileApp() {
           await saveConnection(next);
           setConnection(next);
           setFingerprint("");
-          setStatus("已连接，请在电脑书库选择需要同步的书籍");
+          setStatus("已连接，可在手机搜索选书，也可在电脑选择同步");
         }
       } catch (e: any) {
         if (active) setError(e.message);
@@ -280,8 +335,21 @@ export function MobileApp() {
     };
   }, [c?.token, c?.deviceId, c?.pendingGrant]);
   async function pair(value = input) {
+    if (removing.current) return;
     setError("");
     try {
+      if (new URLSearchParams(new URL(value).hash.slice(1)).has("connect")) {
+        if (!c) throw Error("请先配对电脑");
+        const next = await reconnect(c, value);
+        await saveConnection(next);
+        setConnection(next);
+        setReconnecting(false);
+        setInput("");
+        setStatus("电脑地址已更新，正在接收所选书籍");
+        if (syncing.current) pendingSync.current = next;
+        else void sync(next);
+        return;
+      }
       const p = pairPayload(value);
       if (
         c &&
@@ -344,6 +412,13 @@ export function MobileApp() {
       anchor?.resourceManifestId ||
       [...d.manifests].reverse().find((m: any) => m.versionId === v.id)?.id;
     setOutline([]);
+    setReaderLocation(d.readingState?.locator || {});
+    setJumpBack(null);
+    setReadingNotice("");
+    setComposing(false);
+    setReaderChrome(false);
+    setToolsOpen(false);
+    setReaderSettings(false);
     setShowBookNotes(false);
     state.current.lastBook = d.id;
     setPrefs({
@@ -381,6 +456,7 @@ export function MobileApp() {
   }
   function compose(s: Captured | null) {
     setSelection(s);
+    setComposing(!!s && !s.anchor.quote.exact);
     if (s) {
       setEditing(null);
       setDraft(
@@ -507,7 +583,7 @@ export function MobileApp() {
     }
   }
   async function removeConnection() {
-    if (syncing.current) {
+    if (syncing.current || readingSyncing.current || removing.current) {
       setError("请等本次同步完成后再移除连接");
       return;
     }
@@ -521,6 +597,8 @@ export function MobileApp() {
       )
     )
       return;
+    removing.current = true;
+    if (positionTimer.current) clearTimeout(positionTimer.current);
     try {
       await clearFiles();
       await clearConnection();
@@ -532,6 +610,8 @@ export function MobileApp() {
       changed();
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      removing.current = false;
     }
   }
   async function discard(op: any) {
@@ -573,7 +653,7 @@ export function MobileApp() {
     documents.find((d: any) => d.readingState);
   const todayMinutes = Math.floor(
     (dailyTotals([
-      ...(state.current.library?.readingData?.events || []),
+      ...mobileReadingData(state.current).events,
       ...(state.current.readingEvents || []),
     ])[dayKey(Date.now())] || 0) / 60000,
   );
@@ -616,25 +696,83 @@ export function MobileApp() {
     if (!book) return;
     open(book, n.anchor);
     setEditing(m);
+    setComposing(true);
     setSelection(null);
     setDraft(state.current.drafts["message:" + m.id] ?? m.body);
     setShowBookNotes(false);
     setView("library");
   };
+  const chapterIndex = outline.findIndex(o => o.locator.href
+    ? o.locator.href.split("#")[0] === readerLocation.href?.split("#")[0]
+    : false);
+  const jumpChapter = (direction: -1 | 1) => {
+    const item = outline[chapterIndex + direction];
+    if (!item) return;
+    setJumpBack(reader.current?.getLocation());
+    setReaderChrome(false);
+    void reader.current?.navigateLocation(item.locator).catch(e => setError(e.message));
+  };
+  useEffect(() => {
+    if (!readingNotice) return;
+    const timer = setTimeout(() => setReadingNotice(""), 2000);
+    return () => clearTimeout(timer);
+  }, [readingNotice]);
   const closeBook = () => {
     setDoc(null);
+    setView("library");
+    setToolsOpen(false);
     setSelection(null);
     setEditing(null);
     setShowBookNotes(false);
     setReaderSettings(false);
+    setJumpBack(null);
     window.speechSynthesis?.cancel();
   };
+  const fullScreen = !!doc || statsMode;
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    void (fullScreen ? SystemBars.hide() : SystemBars.show()).catch(() => {});
+    return () => {void SystemBars.show().catch(() => {});};
+  }, [fullScreen, foreground]);
+  useEffect(() => {
+    if (!readingDisplayAvailable()) return;
+    void ReadingDisplay.set({active: !!doc && foreground, keepAwake: prefs.keepAwake !== false, brightness: prefs.brightness ?? -1}).catch(e => setError(e.message));
+  }, [!!doc, foreground, prefs.keepAwake, prefs.brightness]);
+  useEffect(() => () => {
+    if (readingDisplayAvailable()) void ReadingDisplay.set({active: false}).catch(() => {});
+  }, []);
+  const backAction = useRef<() => boolean>(() => false);
+  backAction.current = () => {
+    if (statsMode) {setStatsMode(false);return true;}
+    if (selection || editing) {
+      if (composing && selection && !editing) {setComposing(false);return true;}
+      setSelection(null);setEditing(null);reader.current?.clearNativeSelection();return true;
+    }
+    if (readerSettings) {setReaderSettings(false);return true;}
+    if (showBookNotes) {setShowBookNotes(false);return true;}
+    if (toolsOpen) {setCloseTools((v)=>v+1);return true;}
+    if (doc) {closeBook();return true;}
+    if (reconnecting) {setReconnecting(false);return true;}
+    if (view === "settings" && settingsPage !== "home") {setSettingsPage(settingsPage === "catalog" ? "sync" : "home");return true;}
+    if (view !== "library") {setView("library");return true;}
+    return false;
+  };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {if(e.key==="Escape" && backAction.current()) e.preventDefault();};
+    window.addEventListener("keydown",key);
+    const listener = Capacitor.getPlatform()==="android" ? NativeApp.addListener("backButton", () => {
+      if (!backAction.current()) void NativeApp.minimizeApp();
+    }) : undefined;
+    return () => {window.removeEventListener("keydown",key);void listener?.then((v)=>v.remove());};
+  }, []);
   return (
     <div
-      className={"mobile-app" + (doc ? " reader-mode" : "")}
+      className={"mobile-app" + (doc ? " reader-mode" : "") + (statsMode ? " mobile-stats-mode" : "")}
+      data-chrome-visible={readerChrome}
+      data-reading-theme={doc ? prefs.theme : undefined}
       data-refresh={version}
     >
-      <header className="mobile-header">
+      <header className="mobile-header" inert={!!doc && !readerChrome} aria-hidden={!!doc && !readerChrome}>
         {doc ? (
           <>
             <button aria-label={tr("返回书库")} onClick={closeBook}>
@@ -643,6 +781,7 @@ export function MobileApp() {
             <div className="mobile-reader-title">
               <strong>{doc.title.replace(/\.[^.]+$/, "")}</strong>
             </div>
+            <button aria-label={tr(prefs.theme === "dark" ? "切换浅色阅读" : "切换深色阅读")} onClick={() => setPrefs(p => ({...p,theme:p.theme === "dark" ? "light" : "dark"}))}>{prefs.theme === "dark" ? <Sun size={20}/> : <Moon size={20}/>}</button>
             <button
               aria-label={tr("导出本书 ORD")}
               disabled={ordBusy}
@@ -653,6 +792,7 @@ export function MobileApp() {
           </>
         ) : (
           <>
+            {view === "settings" && settingsPage !== "home" && <button aria-label={tr(settingsPage === "catalog" ? "返回电脑与同步" : "返回设置")} onClick={() => {setReconnecting(false);setSettingsPage(settingsPage === "catalog" ? "sync" : "home");}}><ArrowLeft size={22}/></button>}
             <div>
               <span className="mobile-brand">OPEN READING</span>
               <h1>
@@ -661,7 +801,7 @@ export function MobileApp() {
                     ? "书架"
                     : view === "notes"
                       ? "笔记"
-                      : "设置",
+                      : settingsTitle(settingsPage),
                 )}
               </h1>
             </div>
@@ -669,7 +809,7 @@ export function MobileApp() {
               <button
                 className="mobile-round-button"
                 aria-label={tr("添加书籍")}
-                onClick={() => setView("settings")}
+                onClick={() => {setView("settings");setSettingsPage("sync");}}
               >
                 <Plus size={23} />
               </button>
@@ -677,6 +817,7 @@ export function MobileApp() {
           </>
         )}
       </header>
+      {readingNotice && <div className="mobile-reading-notice" role="status">{tr(readingNotice)}</div>}
       {error && (
         <div className="mobile-error" role="alert">
           {tr(error)}
@@ -691,13 +832,17 @@ export function MobileApp() {
             scope="authorized"
             data={{
               events: [
-                ...(state.current.library?.readingData?.events || []),
+                ...mobileReadingData(state.current).events,
                 ...(state.current.readingEvents || []),
               ],
-              goalMinutes:
-                state.current.library?.readingData?.goalMinutes || 30,
+              goalMinutes: mobileReadingData(state.current).goalMinutes,
             }}
-            notice="阅读记录随所选书籍同步，离线记录保存在手机"
+            notice={
+              readingSyncError ||
+              (state.current.readingEvents?.length
+                ? "阅读时间已保存在手机，电脑选中的书籍会自动同步"
+                : "阅读时间与电脑同步，重叠时段只计一次")
+            }
             onClose={() => setStatsMode(false)}
           />
         </div>
@@ -708,12 +853,20 @@ export function MobileApp() {
             <Reader
               ref={reader}
               progressContainer={progressHost}
+              timerContainer={timerHost}
+              readingEvents={[
+                ...mobileReadingData(state.current).events,
+                ...(state.current.readingEvents || []),
+              ]}
               wordCountContainer={null}
               pdfControlsContainer={null}
               pageNumberContainer={pageHost}
               key={doc.workspaceDocumentId + doc.version.id}
               doc={doc}
               preferences={prefs}
+              onReaderTap={() => setReaderChrome((v) => !v)}
+              onReaderTurn={() => setReaderChrome(false)}
+              onSeekStart={setJumpBack}
               onPdfScaleChange={(scale) =>
                 setPrefs((p) => ({ ...p, pdfScale: scale }))
               }
@@ -723,7 +876,8 @@ export function MobileApp() {
                 !selection &&
                 !editing &&
                 !showBookNotes &&
-                !readerSettings
+                !readerSettings &&
+                !toolsOpen
               }
               onReading={recordReading}
               annotations={threadNotes}
@@ -734,7 +888,16 @@ export function MobileApp() {
               onError={setError}
             />
           </div>
-          <div className="mobile-reader-toolbar">
+          <div className="mobile-reading-status" aria-hidden={readerChrome}>
+            <span>{outline.find(o => o.locator.href && o.locator.href.split("#")[0] === readerLocation.href?.split("#")[0])?.label || doc.title.replace(/\.[^.]+$/, "")}</span>
+            <span>{readerLocation.percentage == null ? "" : `${readerLocation.percentage}%`}</span>
+          </div>
+          {jumpBack && <button className="mobile-jump-back" aria-label={tr("返回跳转前位置")} onClick={() => {
+            const target = jumpBack;setJumpBack(null);
+            void reader.current?.navigateLocation(target).catch(e => setError(e.message));
+          }}><Undo2 size={16}/>{tr("返回原位置")}</button>}
+          <div className="mobile-reader-toolbar" inert={!readerChrome} aria-hidden={!readerChrome}>
+            <div className="mobile-reading-timers" ref={setTimerHost} />
             <div className="mobile-reader-pagebar">
               <button
                 aria-label={tr("上一页或章节")}
@@ -751,133 +914,31 @@ export function MobileApp() {
                 <ChevronRight size={16} />
               </button>
             </div>
+            {isEpubFormat(doc.format) && outline.length > 1 && <div className="mobile-chapter-controls">
+              <button onClick={() => jumpChapter(-1)} disabled={chapterIndex <= 0}>{tr("上一章")}</button>
+              <span>{tr("轻点两侧翻页 · 中间菜单")}</span>
+              <button onClick={() => jumpChapter(1)} disabled={chapterIndex < 0 || chapterIndex >= outline.length - 1}>{tr("下一章")}</button>
+            </div>}
             <BookTools
-              doc={doc}
-              reader={reader}
-              outline={outline}
-              encoding={prefs.encoding}
-              mobile
-              onError={setError}
-            />
-            <div className="mobile-reader-secondary">
-              <button onClick={() => setShowBookNotes(!showBookNotes)}>
-                <NotebookPen size={18} />
-                {tr("笔记")} {currentDoc?.threads.length || 0}
-              </button>
-              {doc.format === "pdf" && (
-                <button onClick={() => reader.current?.addPageNote()}>
-                  {tr("页级笔记")}
-                </button>
-              )}
-              <button
-                aria-label={tr("阅读设置")}
-                onClick={() => setReaderSettings(true)}
-              >
-                <span className="type-icon">Aa</span>
-                {tr("阅读设置")}
-              </button>
-            </div>
-          </div>
-          {readerSettings && (
-            <section
-              className="mobile-sheet"
-              role="dialog"
-              aria-label={tr("阅读设置")}
+              doc={doc} reader={reader} outline={outline} encoding={prefs.encoding} mobile
+              onPanelChange={setToolsOpen} closeRequest={closeTools} onError={setError}
+              onNavigate={setJumpBack} onResume={() => setReaderChrome(false)}
             >
-              <header>
-                <h3>{tr("阅读设置")}</h3>
-                <button
-                  aria-label={tr("关闭阅读设置")}
-                  onClick={() => setReaderSettings(false)}
-                >
-                  <X size={20} />
-                </button>
-              </header>
-              <label>
-                {tr("字号")}
-                <input
-                  aria-label={tr("手机阅读字号")}
-                  type="range"
-                  min="14"
-                  max="30"
-                  value={prefs.fontSize}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, fontSize: Number(e.target.value) })
-                  }
-                />
-                {prefs.fontSize}
-              </label>
-              <label>
-                {tr("行距")}
-                <input
-                  type="range"
-                  min="1.3"
-                  max="2.5"
-                  step=".1"
-                  value={prefs.lineHeight}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, lineHeight: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                {tr("字体")}
-                <select
-                  value={prefs.fontFamily}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, fontFamily: e.target.value })
-                  }
-                >
-                  <option value="system-ui">{tr("系统字体")}</option>
-                  <option value="serif">{tr("衬线字体")}</option>
-                </select>
-              </label>
-              <label>
-                {tr("阅读模式")}
-                <select
-                  value={prefs.epubFlow}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, epubFlow: e.target.value })
-                  }
-                >
-                  <option value="scrolled-doc">{tr("章节滚动")}</option>
-                  <option value="paginated">{tr("单页")}</option>
-                </select>
-              </label>
-              <button
-                className="mobile-theme-choice"
-                onClick={() =>
-                  setPrefs({
-                    ...prefs,
-                    theme: prefs.theme === "dark" ? "light" : "dark",
-                  })
-                }
-              >
-                {prefs.theme === "dark" ? (
-                  <Sun size={18} />
-                ) : (
-                  <Moon size={18} />
-                )}{" "}
-                {tr("切换黑白主题")}
-              </button>
-              <small>{tr("阅读设置会单独记住这本书的偏好。")}</small>
-            </section>
-          )}
-          {(selection || editing) && (
-            <div className="mobile-compose">
-              <header>
-                <strong>{tr("写下你的理解")}</strong>
-                <button
-                  className="mobile-compose-close"
-                  aria-label={tr("收起编辑")}
-                  onClick={() => {
-                    setSelection(null);
-                    setEditing(null);
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </header>
+              <button aria-label={tr("本书笔记")} onClick={() => setShowBookNotes(true)}><NotebookPen size={20}/><span>{tr("笔记")}</span></button>
+              <button aria-label={tr("阅读设置")} onClick={() => setReaderSettings(true)}><span className="type-icon">Aa</span><span>{tr("设置")}</span></button>
+            </BookTools>
+          </div>
+          {readerSettings && <ReaderSettings preferences={prefs} onChange={setPrefs} onClose={() => setReaderSettings(false)} epub={isEpubFormat(doc.format)} pdf={doc.format === "pdf"}/>}
+          {selection && !editing && !composing && <MobileSheet title="选中文字" onClose={() => {setSelection(null);reader.current?.clearNativeSelection();}} className="mobile-selection-sheet">
+            <blockquote>{selection.anchor.quote.exact}</blockquote>
+            <div className="mobile-selection-actions"><button className="primary" onClick={() => setComposing(true)}>{tr("写笔记")}</button><button onClick={() => {
+              void navigator.clipboard.writeText(selection.anchor.quote.exact).then(() => {
+                setSelection(null);reader.current?.clearNativeSelection();setReadingNotice("已复制");
+              }).catch(() => setError("复制失败，请使用系统选文菜单复制"));
+            }}>{tr("复制")}</button></div>
+          </MobileSheet>}
+          {(editing || (selection && composing)) && (
+            <MobileSheet title="写下你的理解" closeLabel="收起编辑" onClose={() => {setSelection(null);setEditing(null);reader.current?.clearNativeSelection();}} className="mobile-compose">
               {selection && (
                 <blockquote>
                   {selection.anchor.quote.exact ||
@@ -898,7 +959,7 @@ export function MobileApp() {
               >
                 {tr("保存手机笔记")}
               </button>
-            </div>
+            </MobileSheet>
           )}
         </>
       ) : view === "library" ? (
@@ -915,7 +976,7 @@ export function MobileApp() {
           {c?.deviceId && !documents.length && loaded && (
             <button
               className="mobile-sync-hint"
-              onClick={() => setView("settings")}
+              onClick={() => {setView("settings");setSettingsPage("sync");}}
             >
               <Laptop size={21} />
               <span>
@@ -1021,7 +1082,7 @@ export function MobileApp() {
                 )}
               </p>
               {!c?.deviceId && (
-                <button className="primary" onClick={() => setView("settings")}>
+                <button className="primary" onClick={() => {setView("settings");setSettingsPage("sync");}}>
                   {tr("设置书库连接")}
                   <ChevronRight size={16} />
                 </button>
@@ -1062,23 +1123,10 @@ export function MobileApp() {
             ))}
         </main>
       ) : (
-        <main className="mobile-settings">
-          <section className="mobile-reading-summary">
-            <div>
-              <span>{tr("今日阅读")}</span>
-              <strong>
-                {todayMinutes}
-                <small>{tr("分钟")}</small>
-              </strong>
-            </div>
-            <button
-              aria-label={tr("阅读数据")}
-              onClick={() => setStatsMode(true)}
-            >
-              {tr("阅读日历")}
-              <ChevronRight size={17} />
-            </button>
-          </section>
+        <main className={"mobile-settings" + (settingsPage === "home" ? " mobile-settings-home" : " mobile-settings-subpage")} data-settings-page={settingsPage}>
+          {settingsPage === "home" && <SettingsMenu paired={!!c?.deviceId} count={documents.length} pending={state.current.outbox.length} open={setSettingsPage} onStats={() => setStatsMode(true)} onLibrary={()=>setView("library")}/>}
+          {settingsPage === "catalog" && c?.deviceId && <ComputerLibrary connection={c} downloaded={new Set(documents.map((d:any)=>d.id))} onReceive={()=>sync()} receiving={syncInProgress} progress={status} syncError={syncError} onLibrary={()=>{setView("library");setSettingsPage("home");}}/>}
+          {settingsPage === "sync" && <>
           <section className="mobile-settings-group mobile-sync-card">
             <h2>{tr("书库与设备")}</h2>
             <div className="mobile-connection-title">
@@ -1100,14 +1148,7 @@ export function MobileApp() {
             </div>
             {c?.deviceId && (
               <>
-                <div className="mobile-sync-guide">
-                  <strong>{tr("书籍在电脑上选")}</strong>
-                  <p>
-                    {tr(
-                      "书库 → 同步 → 勾选书籍 → 开始同步。也可右键同步单本、文件夹，或选择整个工作区。",
-                    )}
-                  </p>
-                </div>
+                <button className="mobile-search-computer" onClick={()=>setSettingsPage("catalog")}><Search size={19}/><span><strong>{tr("从电脑书库选书")}</strong><small>{tr("搜索书名，选择同步到手机")}</small></span><ChevronRight size={18}/></button>
                 <div className="mobile-sync-metrics">
                   <div>
                     <strong>{documents.length}</strong>
@@ -1134,7 +1175,11 @@ export function MobileApp() {
                   <span>
                     {tr(
                       syncInProgress
-                        ? "正在接收所选书籍…"
+                        ? status.includes("校验并保存")
+                          ? "正在校验并保存…"
+                          : status.includes("更新手机书架")
+                            ? "正在更新手机书架…"
+                            : "正在接收所选书籍…"
                         : "接收所选书籍与笔记",
                     )}
                   </span>
@@ -1150,7 +1195,7 @@ export function MobileApp() {
                   role="status"
                   aria-live="polite"
                 >
-                  {tr(status) || tr("等待电脑选择书籍；已下载内容可离线阅读")}
+                  {tr(status) || tr("选择想读的书，或接收电脑已选书籍")}
                   {state.current.library?.syncedAt && (
                     <small>
                       {tr("上次同步 ")}
@@ -1173,12 +1218,13 @@ export function MobileApp() {
                   }}
                 >
                   <ScanLine size={19} />
-                  <span>{tr("重新扫码授权（保留文件与笔记）")}</span>
+                  <span>{tr("更新电脑连接（保留文件与笔记）")}</span>
                   <ChevronRight size={17} />
                 </button>
                 <details className="mobile-device-details">
                   <summary>{tr("连接详情与移除")}</summary>
                   <p>{c.origin}</p>
+                  <p>{tr("电脑更换网络后地址可能变化。请在电脑“同步到手机”中点“更新手机连接”，重新扫码即可保留书籍与笔记。")}</p>
                   <button
                     className="danger"
                     onClick={() => void removeConnection()}
@@ -1273,7 +1319,69 @@ export function MobileApp() {
               )}
             </section>
           )}
+          <section className="mobile-reading-summary">
+            <div>
+              <span>{tr("今日阅读")}</span>
+              <strong>
+                {todayMinutes}
+                <small>{tr("分钟")}</small>
+              </strong>
+            </div>
+            <button
+              aria-label={tr("阅读数据")}
+              onClick={() => setStatsMode(true)}
+            >
+              {tr("阅读日历")}
+              <ChevronRight size={17} />
+            </button>
+          </section>
           {c?.deviceId && (
+            <section className="mobile-settings-group mobile-reading-sync">
+              <h2>{tr("阅读时间同步")}</h2>
+              <p>
+                {tr("电脑和手机的阅读时间合并累计，离线阅读先保存在手机。")}
+              </p>
+              <button
+                className="mobile-settings-row"
+                onClick={() => void syncTimes()}
+                disabled={readingSyncInProgress}
+              >
+                <RefreshCw
+                  size={18}
+                  className={readingSyncInProgress ? "spinning" : ""}
+                />
+                <span>
+                  {tr(
+                    readingSyncInProgress
+                      ? "正在同步阅读时间…"
+                      : "同步阅读时间",
+                  )}
+                </span>
+                <ChevronRight size={17} />
+              </button>
+              <div role="status" className="mobile-reading-sync-status">
+                {tr(
+                  readingSyncError ||
+                    (state.current.readingEvents?.length
+                      ? "阅读时间已保存在手机，电脑选中的书籍会自动同步"
+                      : state.current.readingSyncedAt
+                        ? "阅读时间已同步"
+                        : "阅读时间将在连接电脑后同步"),
+                )}
+                {state.current.readingSyncedAt && (
+                  <small>
+                    {tr("上次同步 ")}
+                    {new Date(state.current.readingSyncedAt).toLocaleString(
+                      locale(),
+                    )}
+                  </small>
+                )}
+              </div>
+            </section>
+          )}
+          </>}
+          {settingsPage === "import" && !c?.deviceId && <section className="mobile-settings-group"><p>{tr("先连接电脑，再导入或分享学习包")}</p><button className="primary" onClick={()=>setSettingsPage("sync")}>{tr("连接电脑")}</button></section>}
+          {settingsPage === "import" && c?.deviceId && (
             <section className="mobile-settings-group">
               <h2>{tr("导入与分享")}</h2>{" "}
               <div className="mobile-ord-import">
@@ -1310,7 +1418,7 @@ export function MobileApp() {
               </div>
             </section>
           )}
-          <section className="mobile-settings-group">
+          {settingsPage === "appearance" && <section className="mobile-settings-group">
             <h2>{tr("偏好设置")}</h2>
             <div className="mobile-settings-row">
               <Sun size={19} />
@@ -1331,15 +1439,16 @@ export function MobileApp() {
               <span>{tr("界面语言")}</span>
               <LanguageSelect compact />
             </div>
-          </section>
-          <p className="mobile-settings-about">
+          </section>}
+          {settingsPage === "about" && <section className="mobile-settings-group mobile-about-page"><BookOpen size={38}/><h2>Open Reading</h2><p>{tr("自己的书库，随身的阅读")}</p><p>{tr("书籍和笔记保存在自己的设备，电脑与手机在局域网直接同步。")}</p><a href="/licenses/PRIVACY.md" target="_blank" rel="noreferrer">{tr("隐私说明")}</a><a href="/licenses/index.html" target="_blank" rel="noreferrer">{tr("第三方许可")}</a></section>}
+          {settingsPage === "home" && <p className="mobile-settings-about">
             Open Reading
             <br />
             <span>{tr("书籍在身边，思考留在字里行间。")}</span>
-          </p>
+          </p>}
         </main>
       )}
-      {!doc && (
+      {!doc && !(view === "settings" && settingsPage !== "home") && (
         <nav className="mobile-tabbar" aria-label={tr("主导航")}>
           {(
             [
@@ -1351,7 +1460,7 @@ export function MobileApp() {
             <button
               key={key}
               aria-current={view === key ? "page" : undefined}
-              onClick={() => setView(key)}
+              onClick={() => {setView(key);if(key === "settings")setSettingsPage("home");}}
             >
               <Icon size={23} strokeWidth={view === key ? 2 : 1.6} />
               <span>{tr(label)}</span>
@@ -1360,20 +1469,7 @@ export function MobileApp() {
         </nav>
       )}
       {doc && showBookNotes && (
-        <section
-          className="mobile-sheet mobile-notes-sheet"
-          role="dialog"
-          aria-label={tr("本文件笔记")}
-        >
-          <header>
-            <h3>{tr("本文件笔记")}</h3>
-            <button
-              aria-label={tr("关闭本书笔记")}
-              onClick={() => setShowBookNotes(false)}
-            >
-              <X size={20} />
-            </button>
-          </header>
+        <MobileSheet title="本文件笔记" closeLabel="关闭本书笔记" onClose={() => setShowBookNotes(false)} className="mobile-notes-sheet">
           <NotesCenter
             notes={notes.filter(
               (n: any) => n.workspaceDocumentId === doc.workspaceDocumentId,
@@ -1385,7 +1481,7 @@ export function MobileApp() {
             onSave={saveLearning}
             onEdit={editNote}
           />
-        </section>
+        </MobileSheet>
       )}
       <input
         ref={ordInput}

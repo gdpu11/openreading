@@ -1,3 +1,4 @@
+import { readerGestures } from "./gestures";
 import { readingFormat } from "../formats";
 import { clearEpubHighlights } from "./epubHighlights";
 import { tr } from "../i18n";
@@ -59,6 +60,9 @@ const PARSERS = {
   epub: "epubjs-0.3.93-map-v1",
 };
 type Props = {
+  onReaderTap?: (position: number) => void;
+  onReaderTurn?: () => void;
+  onSeekStart?: (locator: any) => void;
   progressContainer?: HTMLElement | null;
   timerContainer?: HTMLElement | null;
   wordCountContainer?: HTMLElement | null;
@@ -66,6 +70,7 @@ type Props = {
   pdfControlsContainer?: HTMLElement | null;
   activityEnabled?: boolean;
   onReading?: (event: ReadingEvent) => void;
+  readingEvents?: ReadingEvent[];
   onPdfScaleChange?: (scale: number, persist: boolean) => void;
   doc: Prepared;
   preferences: ReaderPreferences;
@@ -83,6 +88,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
   function Reader(props, ref) {
     const { doc: sourceDoc, preferences: p } = props;
     const doc = { ...sourceDoc, format: readingFormat(sourceDoc.format) };
+    const readingColors = p.theme === "dark" ? (props.onReaderTap ? {ink: "#d5d7dc", paper: "#17191c"} : {ink: "#eeeeee", paper: "#000000"})
+      : p.theme === "sepia" ? {ink: "#493e32", paper: "#f4ecd8"}
+      : p.theme === "green" ? {ink: "#293d31", paper: "#e3ecdf"}
+      : {ink: props.onReaderTap ? "#24272c" : "#202020", paper: "#ffffff"};
     const parserVersion = (sourceDoc.format === doc.format ? "" : `normalized-${sourceDoc.format}-v1:`) + PARSERS[doc.format as keyof typeof PARSERS];
     const host = useRef<HTMLDivElement>(null);
     const textRoot = useRef<HTMLElement | null>(null);
@@ -311,10 +320,15 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       );
       if (rendition.current === r) await r.display(target);
     };
+    const adapterLocation = () => doc.format === "pdf"
+      ? {pageIndex: pdfCurrentPage.current}
+      : doc.format === "epub" ? {...currentLocator.current}
+      : {scrollTop: host.current?.scrollTop || 0};
     const seekProgress = async (percentage: number) => {
       const fraction = Math.max(0, Math.min(1, percentage / 100));
       const r = rendition.current;
       try {
+        latest.current.onSeekStart?.(adapterLocation());
         setSelectionCleared();
         if (doc.format === "pdf") {
           const index = Math.max(
@@ -409,6 +423,47 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
     };
     const keyboardTurn = useRef(turnPage);
     keyboardTurn.current = turnPage;
+    const gesturesEnabled = () => latest.current.activityEnabled !== false &&
+      !(doc.format === "pdf" && latest.current.preferences.pdfScale > 1);
+    const touchTurn = (direction: -1 | 1) => {
+      latest.current.onReaderTurn?.();
+      const el = host.current;
+      if (doc.format === "epub" && latest.current.preferences.epubFlow !== "paginated" && el &&
+          (direction > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 4 : el.scrollTop > 4)) {
+        el.scrollBy({top: direction * el.clientHeight * 0.9, behavior: "instant"});
+      } else keyboardTurn.current(direction);
+    };
+    const attachGestures = (surface: HTMLElement | Document) => readerGestures(surface, {
+      enabled: () => !!latest.current.onReaderTap && latest.current.activityEnabled !== false,
+      tap: (clientX) => {
+        // Zoomed PDFs still need a way to reveal their controls. Keep taps,
+        // while letting native panning/pinching own all drag gestures.
+        if (doc.format === "pdf" && latest.current.preferences.pdfScale > 1) {
+          latest.current.onReaderTap?.(0.5);
+          return;
+        }
+        const bounds = host.current?.getBoundingClientRect();
+        if (!bounds?.width) return;
+        // A paginated EPUB iframe spans multiple columns. Its clientX must be
+        // translated back to the visible reader, including negative offsets.
+        const frame = surface.nodeType === 9 ? (surface as Document).defaultView?.frameElement : null;
+        const x = clientX + (frame?.getBoundingClientRect().left || 0);
+        const position = Math.max(0, Math.min(1, (x - bounds.left) / bounds.width));
+        if (latest.current.preferences.tapToTurn === false) latest.current.onReaderTap?.(position);
+        else if (position < 0.28) touchTurn(-1);
+        else if (position > 0.72) touchTurn(1);
+        else latest.current.onReaderTap?.(position);
+      },
+      swipe: direction => {if (gesturesEnabled()) touchTurn(direction);},
+    });
+    const attachGesturesRef = useRef(attachGestures);
+    attachGesturesRef.current=attachGestures;
+    const gestures = !!props.onReaderTap;
+    useEffect(() => {
+      if (!gestures || !host.current) return;
+      return attachGesturesRef.current(host.current);
+    }, [gestures]);
+
     const handlePageKey = useCallback((event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -945,12 +1000,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         !error &&
         !needsPassword &&
         (doc.format === "pdf" ? !!pdf.current : !!root()),
-      getLocation: () =>
-        doc.format === "pdf"
-          ? { pageIndex: pdfCurrentPage.current }
-          : doc.format === "epub"
-            ? { ...currentLocator.current }
-            : { scrollTop: host.current?.scrollTop || 0 },
+      getLocation: adapterLocation,
       getHistory: () => [...navigationHistory.current],
       turnPage: (direction) => {
         if (doc.format === "pdf")
@@ -1014,7 +1064,9 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         if (doc.format === "pdf") {
           goToPdfPage(locator.pageIndex || 0);
         } else if (doc.format === "epub" && rendition.current) {
-          await rendition.current.display(locator.cfi || locator.href);
+          await displayEpubAt(rendition.current, locator.cfi || locator.href);
+          if (latest.current.preferences.epubFlow !== "paginated" && host.current)
+            host.current.scrollTop = locator.scrollTop || 0;
         } else if (locator.heading !== undefined) {
           textRoot.current
             ?.querySelectorAll("h1,h2,h3,h4")
@@ -1214,6 +1266,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               // epub.js forwards keys through a passive listener, which cannot
               // cancel the browser's native arrow-key scrolling.
               c.document.addEventListener("keydown", handlePageKey);
+              if (latest.current.onReaderTap) {
+                c.document.body.style.touchAction = "pan-y pinch-zoom";
+                attachGesturesRef.current(c.document);
+              }
               const meta = c.document.createElement("meta");
               meta.httpEquiv = "Content-Security-Policy";
               meta.content = epubCSP;
@@ -1279,13 +1335,9 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             r.themes.default({
               body: {
                 color:
-                  p.theme === "dark"
-                    ? "#eeeeee !important"
-                    : "#202020 !important",
+                  readingColors.ink + " !important",
                 background:
-                  p.theme === "dark"
-                    ? "#000000 !important"
-                    : "#ffffff !important",
+                  readingColors.paper + " !important",
               },
               "p, span, div, h1, h2, h3, h4, li": {
                 color: "inherit !important",
@@ -1303,7 +1355,9 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             let candidate = "",
               published = "";
             selectionPoll = setInterval(() => {
-              if (disposed) return;
+              // Mobile selection actions and its editor take focus out of the
+              // iframe. Preserve the captured excerpt until they are dismissed.
+              if (disposed || latest.current.activityEnabled === false) return;
               const c = r.getContents()[0];
               const selection = c?.document.defaultView?.getSelection();
               if (!selection?.rangeCount || selection.isCollapsed) {
@@ -1447,9 +1501,9 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         r.themes.default({
           body: {
             color:
-              p.theme === "dark" ? "#eeeeee !important" : "#202020 !important",
+              readingColors.ink + " !important",
             background:
-              p.theme === "dark" ? "#000000 !important" : "#ffffff !important",
+              readingColors.paper + " !important",
           },
           "p, span, div, h1, h2, h3, h4, li": { color: "inherit !important" },
         });
@@ -1692,6 +1746,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           props.activityEnabled !== false
         }
         record={props.onReading}
+        events={props.readingEvents}
         show={!!props.timerContainer}
       />
     );
@@ -1735,6 +1790,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             : "")
         }
         ref={host}
+        data-touch-reading={(gestures && !(doc.format === "pdf" && p.pdfScale > 1)) || undefined}
         onMouseUp={select}
         onKeyUp={(e) => {
           if (e.shiftKey) select();

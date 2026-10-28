@@ -3,6 +3,9 @@ export type ReaderPreferences = {
   language?: "en" | "zh";
   documentSort?: "default" | "recent" | "added" | "added-oldest" | "name";
   readingSpeed?: number;
+  tapToTurn?: boolean;
+  keepAwake?: boolean;
+  brightness?: number;
   fontSize: number;
   lineHeight: number;
   fontFamily: string;

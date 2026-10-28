@@ -10,6 +10,12 @@ import (
 func TestReadingReceiptsScopeBackupAndRestart(t *testing.T) {
 	c, ws, doc := syncSetup(t)
 	token, _ := approveDevice(t, c, ws)
+	var empty M
+	raw := deviceReq(c, token, "GET", "/api/sync/reading", nil)
+	json.Unmarshal(raw.Body.Bytes(), &empty)
+	if raw.Code != 200 || len(arr(empty, "events")) != 0 || len(arr(empty, "memberIds")) != 1 || arr(empty, "memberIds")[0] != doc["id"] {
+		t.Fatal("lightweight scope must include unread books", empty)
+	}
 	start := time.Now().Add(-time.Hour).UnixMilli()
 	event := M{"id": id(), "member": doc["id"], "startedAt": start, "endedAt": start + 30000}
 	c.ok("POST", "/api/reading/events", M{"events": []M{event}})
@@ -70,6 +76,9 @@ func TestReadingReceiptsScopeBackupAndRestart(t *testing.T) {
 	json.Unmarshal(r.Body.Bytes(), &response)
 	if r.Code != 200 || len(arr(response, "events")) != 2 {
 		t.Fatal("phone scope read", r.Code, response)
+	}
+	if len(arr(response, "memberIds")) != 1 || arr(response, "memberIds")[0] != doc["id"] {
+		t.Fatal("reading scope disclosed another workspace", response)
 	}
 	c.ok("PUT", "/api/reading/goal", M{"minutes": 20})
 	if num(c.ok("GET", "/api/reading", nil), "goalMinutes") != 20 {

@@ -2,10 +2,31 @@ import { describe, it, expect, vi } from "vitest";
 const fake = vi.hoisted(() => ({
   files: new Map<string, string>(),
   fail: false,
+  pauseWrite: undefined as Promise<void> | undefined,
+  nativeAvailable: false,
+  exists: true,
+  commitError: undefined as any,
 }));
 vi.mock("@capacitor/core", () => ({
-  Capacitor: { isNativePlatform: () => true },
-  registerPlugin: () => ({}),
+  Capacitor: {
+    isNativePlatform: () => true,
+    isPluginAvailable: () => fake.nativeAvailable,
+    convertFileSrc: (uri: string) =>
+      uri.replace("file://", "https://localhost/_capacitor_file_"),
+  },
+  registerPlugin: (name: string) =>
+    name === "OfflineFiles"
+      ? {
+          has: async () => ({ exists: fake.exists }),
+          get: async ({ key }: any) => ({
+            exists: fake.exists,
+            uri: "file:///openreading/files/" + key,
+          }),
+          commit: async () => {
+            if (fake.commitError) throw fake.commitError;
+          },
+        }
+      : {},
 }));
 vi.mock("@capacitor/filesystem", () => ({
   Directory: { Data: "DATA" },
@@ -16,6 +37,7 @@ vi.mock("@capacitor/filesystem", () => ({
       return { data: fake.files.get(path) };
     },
     writeFile: async ({ path, data }: any) => {
+      if (fake.pauseWrite) await fake.pauseWrite;
       if (fake.fail) {
         fake.files.set(path, "partial");
         throw Error("disk full");
@@ -34,9 +56,12 @@ import {
   emptyState,
   hash,
   cachedBlob,
+  hasBlob,
+  commitChunks,
   loadChunk,
   saveChunk,
   clearChunks,
+  clearFiles,
 } from "./storage";
 describe("native durable offline queue", () => {
   it("recovers the previous valid queue after an interrupted native state write", async () => {
@@ -120,5 +145,90 @@ it("reads verified native files without any network or data-URL fetch", async ()
     expect(await cachedBlob(key)).toBeUndefined();
   } finally {
     fetchSpy.mockRestore();
+  }
+});
+
+it("checks native cache without reading Base64 and reads only verified local file URLs", async () => {
+  fake.nativeAvailable = true;
+  const key = "a".repeat(64);
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response("verified file"));
+  try {
+    expect(await hasBlob(key)).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await (await cachedBlob(key))?.text()).toBe("verified file");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://localhost/_capacitor_file_/openreading/files/" + key,
+    );
+    fake.exists = false;
+    expect(await hasBlob(key)).toBe(false);
+    expect(await cachedBlob(key)).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  } finally {
+    fake.nativeAvailable = false;
+    fake.exists = true;
+    fetchSpy.mockRestore();
+  }
+});
+
+it("retains native partials after storage errors but clears them after integrity errors", async () => {
+  const key = "b".repeat(64),
+    path = `openreading/partial/${key}/0.json`;
+  try {
+    fake.files.set(path, "saved range");
+    fake.commitError = Object.assign(Error("disk full"), {
+      code: "OFFLINE_SAVE",
+    });
+    await expect(commitChunks(key, 1)).rejects.toThrow("disk full");
+    expect(fake.files.has(path)).toBe(true);
+    fake.commitError = Object.assign(Error("checksum failed"), {
+      code: "INTEGRITY",
+    });
+    await expect(commitChunks(key, 1)).rejects.toThrow("checksum failed");
+    expect(fake.files.has(path)).toBe(false);
+  } finally {
+    fake.commitError = undefined;
+  }
+});
+
+it("waits for queued snapshots before clearing native offline data", async () => {
+  let finishWrite!: () => void;
+  fake.pauseWrite = new Promise<void>((resolve) => {
+    finishWrite = resolve;
+  });
+  const d = {
+    close() {},
+    transaction() {
+      const tx: any = {
+        objectStore: () => ({
+          clear: () => queueMicrotask(() => tx.oncomplete()),
+        }),
+      };
+      return tx;
+    },
+  };
+  vi.stubGlobal("indexedDB", {
+    open() {
+      const request: any = { result: d };
+      queueMicrotask(() => request.onsuccess());
+      return request;
+    },
+  });
+  try {
+    const state = emptyState();
+    state.drafts.private = "must not come back after removal";
+    const save = persistState(state);
+    const clear = clearFiles();
+    await Promise.resolve();
+    finishWrite();
+    await Promise.all([save, clear]);
+    expect(
+      [...fake.files.keys()].some((key) => key.startsWith("openreading/")),
+    ).toBe(false);
+    expect((await loadState()).drafts).toEqual({});
+  } finally {
+    fake.pauseWrite = undefined;
+    vi.unstubAllGlobals();
   }
 });

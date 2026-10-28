@@ -1,4 +1,12 @@
-import { clearChunks, hash, loadChunk, saveChunk, storeBlob } from "./storage";
+import {
+  clearChunks,
+  commitChunks,
+  nativeChunkCommit,
+  hash,
+  loadChunk,
+  saveChunk,
+  storeBlob,
+} from "./storage";
 
 // A completed range is durable before the next request starts. Killing the
 // WebView can lose at most the current 2 MiB, including on the native TLS bridge.
@@ -9,10 +17,12 @@ export async function downloadBlob(
   expectedSize: number | undefined,
   request: (range: string) => Promise<Response>,
   progress: (received: number, total: number) => void,
+  stage: (stage: "saving") => void | Promise<void> = () => {},
 ) {
   let total = expectedSize,
     offset = 0;
   const parts: Blob[] = [];
+  const streaming = nativeChunkCommit();
   if (
     total !== undefined &&
     (!Number.isSafeInteger(total) || total < 0 || total > maxSize)
@@ -36,8 +46,17 @@ export async function downloadBlob(
         const blob = await response.blob();
         if (blob.size > maxSize || (total !== undefined && blob.size !== total))
           throw Error("下载文件长度不一致，请重试");
-        await commit(blob);
         progress(blob.size, blob.size);
+        if (streaming) {
+          // Compatibility with a server that ignores Range. Still write in
+          // bounded pieces rather than sending a whole-file Base64 bridge call.
+          for (let start = 0; start < blob.size; start += chunkSize)
+            await saveChunk(key, start, {
+              blob: blob.slice(start, start + chunkSize),
+              total: blob.size,
+            });
+          await finishChunks(blob.size);
+        } else await commit(blob);
         return;
       }
       if (
@@ -71,13 +90,21 @@ export async function downloadBlob(
       await saveChunk(key, offset, chunk);
     }
     total = chunk.total;
-    parts.push(chunk.blob);
+    if (!streaming) parts.push(chunk.blob);
     offset += chunk.blob.size;
     progress(offset, total);
   }
-  await commit(new Blob(parts));
+  if (streaming) await finishChunks(total!);
+  else await commit(new Blob(parts));
+
+  async function finishChunks(size: number) {
+    await stage("saving");
+    await commitChunks(key, size);
+    await clearChunks(key);
+  }
 
   async function commit(blob: Blob) {
+    await stage("saving");
     if ((await hash(await blob.arrayBuffer())) !== key) {
       await clearChunks(key);
       throw Error("文件校验失败，下载断点已清除，请重新同步");

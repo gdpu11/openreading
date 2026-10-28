@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 // Missing scopes belong to devices paired before file selection was added.
@@ -16,6 +17,11 @@ func deviceDocument(q querier, d, m M) (bool, error) {
 	for _, member := range arr(scope, "excludedMemberIds") {
 		if member == m["id"] {
 			return false, nil
+		}
+	}
+	for _, member := range arr(scope, "memberIds") {
+		if member == m["id"] {
+			return true, nil
 		}
 	}
 	switch str(scope, "mode") {
@@ -166,11 +172,30 @@ func (s *Server) validateSyncScope(q querier, b M) ([]any, M, error) {
 	default:
 		return invalid("同步范围无效")
 	}
+	if mode != "manual" {
+		members := arr(scope, "memberIds")
+		if len(members) > 10000 {
+			return invalid("最多选择 10000 个文件")
+		}
+		for _, raw := range members {
+			member, ok := raw.(string)
+			if !ok {
+				return invalid("文件无效")
+			}
+			m, e := s.member(q, member)
+			if e != nil || !allowed[str(m, "workspaceId")] || str(m, "state") != "active" || str(m, "removedAt") != "" {
+				return invalid("所选文件不在工作区内或已移除，请刷新后重试")
+			}
+		}
+		if len(members) > 0 {
+			result["memberIds"] = members
+		}
+	}
 	return workspaces, result, nil
 }
 
 func (s *Server) syncScopeRoutes() {
-	// Desktop session only: phones must not discover files outside their grant.
+	// Full administrative catalog remains desktop-only; phones use the workspace-scoped catalog.
 	s.route("GET /api/pair/catalog", func(w http.ResponseWriter, r *http.Request) error {
 		docs, e := all(s.db, `SELECT wd.id,wd.workspace_id,d.format,
  COALESCE((SELECT e.relative_path FROM source_entries e JOIN document_bindings b ON b.source_entry_id=e.id JOIN sources s ON s.id=e.source_id WHERE b.workspace_document_id=wd.id ORDER BY (e.state='active' AND b.state='active' AND s.state='active') DESC,e.relative_path LIMIT 1),'历史文档') AS title
@@ -199,8 +224,9 @@ func (s *Server) syncScopeRoutes() {
 		if e != nil {
 			return e
 		}
+		var savedScope M
 		e = s.transaction(func(tx *sql.Tx) error {
-			device, e := one(tx, "SELECT d.id,COALESCE(s.scope_json,'{}') AS sync_scope_json FROM paired_devices d LEFT JOIN device_sync_scopes s ON s.device_id=d.id WHERE d.id=? AND revoked_at IS NULL", r.PathValue("d"))
+			device, e := one(tx, "SELECT d.id,COALESCE(s.scope_json,'{}') AS sync_scope_json FROM paired_devices d LEFT JOIN device_sync_scopes s ON s.device_id=d.id WHERE d.id=? AND revoked_at IS NULL AND expires_at>?", r.PathValue("d"), time.Now().Unix())
 			if e != nil {
 				return e
 			}
@@ -214,6 +240,7 @@ func (s *Server) syncScopeRoutes() {
 			// Pairing alone never enables downloads. Only a desktop save requests it.
 			scope["autoSync"] = true
 			scope["revision"] = id()
+			savedScope = scope
 			if e = exec(tx, "UPDATE paired_devices SET workspace_ids_json=? WHERE id=?", js(workspaces), r.PathValue("d")); e != nil {
 				return e
 			}
@@ -222,6 +249,7 @@ func (s *Server) syncScopeRoutes() {
 		if e != nil {
 			return e
 		}
-		return send(w, M{"ok": true})
+		s.queueSync(r.PathValue("d"), savedScope)
+		return send(w, M{"ok": true, "revision": savedScope["revision"]})
 	})
 }

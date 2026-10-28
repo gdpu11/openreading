@@ -92,7 +92,30 @@ func (s *Server) readingData(q querier, d M) (M, error) {
 	if n := num(obj(pref, "data"), "minutes"); n >= 1 && n <= 1440 {
 		goal = n
 	}
-	return M{"events": events, "goalMinutes": goal}, nil
+	result := M{"events": events, "goalMinutes": goal}
+	if d != nil {
+		// The lightweight ledger advertises its scope without preparing books or
+		// downloading files. Include books that have no reading receipts yet.
+		members, err := all(q, `SELECT wd.id,wd.workspace_id,d.format FROM workspace_documents wd JOIN documents d ON d.id=wd.document_id LEFT JOIN library_books lb ON lb.workspace_document_id=wd.id WHERE wd.state='active' AND COALESCE(lb.removed_at,'')='' ORDER BY wd.id`)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		for _, m := range members {
+			allowed, known := visibility[str(m, "id")]
+			if !known {
+				allowed, err = deviceDocument(q, d, m)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if allowed {
+				ids = append(ids, str(m, "id"))
+			}
+		}
+		result["memberIds"] = ids
+	}
+	return result, nil
 }
 func (s *Server) readingRoutes() {
 	s.route("GET /api/reading/documents/{member}", func(w http.ResponseWriter, r *http.Request) error {

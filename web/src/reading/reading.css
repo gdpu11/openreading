@@ -334,5 +334,15 @@
   background: var(--paper);
 }
 .mobile-app > .reading-stats-overlay {
-  top: calc(108px + env(safe-area-inset-top));
+  position: fixed;
+  inset: 0;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-width: 600px) {
+  .mobile-app .reading-stats-heading {flex-wrap:wrap;align-items:flex-start;}
+  .mobile-app .reading-stats-heading > div:first-child {flex:1;min-width:180px;}
+  .mobile-app .reading-stats-heading > div:last-child {flex-shrink:0;align-self:flex-start;}
+  .mobile-app .reading-stats-heading button {white-space:nowrap;flex-shrink:0;}
 }

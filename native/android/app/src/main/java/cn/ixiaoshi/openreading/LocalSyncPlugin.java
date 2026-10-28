@@ -51,7 +51,8 @@ public class LocalSyncPlugin extends Plugin {
                 connection.setHostnameVerifier((host,session)->{
                     try{return host.equals(url.getHost())&&fingerprint((X509Certificate)session.getPeerCertificates()[0]).equals(pin);}catch(Exception e){return false;}
                 });
-                connection.setInstanceFollowRedirects(false);connection.setUseCaches(false);connection.setConnectTimeout(15000);connection.setReadTimeout(120000);connection.setRequestMethod(method);
+                int timeout = Math.max(5000, Math.min(120000, call.getInt("timeoutMs", 25000)));
+                connection.setInstanceFollowRedirects(false);connection.setUseCaches(false);connection.setConnectTimeout(Math.min(10000, timeout));connection.setReadTimeout(timeout);connection.setRequestMethod(method);
                 JSObject headers=call.getObject("headers",new JSObject());
                 for(String key:new String[]{"Authorization","Content-Type","Range"}){String value=headers.optString(key,"");if(!value.isEmpty())connection.setRequestProperty(key,value);}
                 String encoded=call.getString("body");
@@ -63,7 +64,8 @@ public class LocalSyncPlugin extends Plugin {
                 JSObject result=new JSObject();result.put("status",status);result.put("headers",responseHeaders);result.put("body",Base64.encodeToString(output.toByteArray(),Base64.NO_WRAP));call.resolve(result);
             } catch(Exception e) {
                 boolean trust=false;for(Throwable c=e;c!=null;c=c.getCause()){if(c instanceof CertificateException||c instanceof SSLPeerUnverifiedException){trust=true;break;}}
-                call.reject(trust?"电脑证书与二维码不一致，请核对电脑并重新扫码":"局域网连接失败，请确认电脑开机、同步已开启，手机与电脑连接同一网络");
+                boolean timedOut = e instanceof java.net.SocketTimeoutException;
+                call.reject(timedOut ? "连接电脑超时，请核对电脑地址，并检查 Wi-Fi 设备隔离、VPN 或防火墙" : trust?"电脑证书与二维码不一致，请核对电脑并重新扫码":"局域网连接失败，请确认电脑开机、同步已开启，手机与电脑连接同一网络");
             } finally {if(connection!=null)connection.disconnect();}
         });
     }

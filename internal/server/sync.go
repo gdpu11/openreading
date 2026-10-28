@@ -58,6 +58,8 @@ func fingerprint(hash string) string {
 }
 func (s *Server) syncRoutes() {
 	s.syncScopeRoutes()
+	s.syncCatalogRoutes()
+	s.syncProgressRoutes()
 	s.route("POST /api/pair/grants", func(w http.ResponseWriter, r *http.Request) error {
 		b, e := body(r)
 		if e != nil {
@@ -70,6 +72,9 @@ func (s *Server) syncRoutes() {
 		scopes, scope, e := s.validateSyncScope(s.db, b)
 		if e != nil {
 			return e
+		}
+		if b["connectionOnly"] == true {
+			scope = M{"mode": "manual", "memberIds": []any{}, "connectionOnly": true}
 		}
 		grant, secret := id(), id()+id()
 		expiry := time.Now().Add(3 * time.Minute).Unix()
@@ -154,9 +159,15 @@ func (s *Server) syncRoutes() {
 				return problem(409, "INVALID_PAIR", "设备尚未扫描，或二维码已过期", false)
 			}
 			d := id()
-			existing, err := one(tx, "SELECT id FROM paired_devices WHERE token_hash=?", g["claimHash"])
+			existing, err := one(tx, "SELECT d.*,COALESCE(s.scope_json,'{}') AS sync_scope_json FROM paired_devices d LEFT JOIN device_sync_scopes s ON s.device_id=d.id WHERE token_hash=?", g["claimHash"])
+			connectionOnly := obj(g, "syncScope")["connectionOnly"] == true
+			delete(obj(g, "syncScope"), "connectionOnly")
 			if err == nil {
 				d = str(existing, "id")
+				if connectionOnly && str(existing, "revokedAt") == "" && num(existing, "expiresAt") > int(time.Now().Unix()) {
+					g["workspaceIds"] = existing["workspaceIds"]
+					g["syncScope"] = obj(existing, "syncScope")
+				}
 				e = exec(tx, "UPDATE paired_devices SET name=?,workspace_ids_json=?,expires_at=?,revoked_at=NULL WHERE id=?", g["claimName"], js(g["workspaceIds"]), time.Now().Add(90*24*time.Hour).Unix(), d)
 			} else if isNotFound(err) {
 				e = exec(tx, "INSERT INTO paired_devices(id,name,token_hash,workspace_ids_json,created_at,expires_at) VALUES(?,?,?,?,?,?)", d, g["claimName"], g["claimHash"], js(g["workspaceIds"]), now(), time.Now().Add(90*24*time.Hour).Unix())
@@ -212,6 +223,8 @@ func (s *Server) syncRoutes() {
 		if _, e := s.syncMember(s.db, deviceFrom(r), member); e != nil {
 			return e
 		}
+		title, _ := one(s.db, "SELECT e.relative_path AS title FROM source_entries e JOIN document_bindings b ON b.source_entry_id=e.id WHERE b.workspace_document_id=? ORDER BY e.relative_path LIMIT 1", member)
+		s.observeSync(deviceFrom(r), "sending", str(title, "title"), -1)
 		v, e := s.memberVersion(s.db, member, r.PathValue("v"))
 		if e != nil {
 			return e
@@ -263,8 +276,14 @@ func (s *Server) syncRoutes() {
 	s.route("POST /api/sync/commands", s.syncCommand)
 }
 
-func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) (result error) {
 	d := deviceFrom(r)
+	s.observeSync(d, "preparing", "", 0)
+	defer func() {
+		if result != nil {
+			s.observeSync(d, "failed", "", -1)
+		}
+	}()
 	out := []M{}
 	// One DB transaction publishes a coherent manifest, including newly imported
 	// files never opened on the PC. Sources/paths/provider credentials are omitted.
@@ -363,7 +382,14 @@ func (s *Server) syncLibrary(w http.ResponseWriter, r *http.Request) error {
 	if e != nil {
 		return e
 	}
-	return send(w, M{"schemaVersion": 1, "workspaces": out, "syncedAt": now(), "deviceId": d["id"], "readingData": reading})
+	total := 0
+	for _, ws := range out {
+		if docs, ok := ws["documents"].([]M); ok {
+			total += len(docs)
+		}
+	}
+	s.observeSync(d, "checking", "", total)
+	return send(w, M{"scopeRevision": str(obj(d, "syncScope"), "revision"), "schemaVersion": 1, "workspaces": out, "syncedAt": now(), "deviceId": d["id"], "readingData": reading})
 }
 
 func (s *Server) syncCommand(w http.ResponseWriter, r *http.Request) error {

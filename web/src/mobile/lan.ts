@@ -36,6 +36,7 @@ const LocalSync = registerPlugin<{
     method: string;
     headers: Record<string, string>;
     body?: string;
+    timeoutMs?: number;
   }): Promise<{
     status: number;
     headers: Record<string, string>;
@@ -56,6 +57,7 @@ export async function lanRequest(
   token: string,
   body?: any,
   requestHeaders: Record<string, string> = {},
+  timeoutMs = 25000,
 ) {
   if (
     !validLAN(origin, fingerprint) ||
@@ -77,13 +79,29 @@ export async function lanRequest(
     headers["Content-Type"] = "application/json";
     bytes = new Blob([JSON.stringify(body)]);
   }
-  const result = await LocalSync.request({
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const payload = {
     url: origin + "/api" + path,
     fingerprint,
     method: body === undefined ? "GET" : "POST",
     headers,
     ...(bytes ? { body: await base64(bytes) } : {}),
-  });
+    timeoutMs,
+  };
+  const result = await Promise.race([
+    LocalSync.request(payload),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            Error(
+              "连接电脑超时，请核对连接详情中的电脑地址；同一 Wi-Fi 也可能开启了设备隔离，或被 VPN、防火墙阻止",
+            ),
+          ),
+        timeoutMs + 1000,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
   const binary = atob(result.body),
     decoded = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) decoded[i] = binary.charCodeAt(i);

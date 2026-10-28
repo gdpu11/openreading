@@ -52,6 +52,7 @@ test("paired phone waits for a PC sync request across startup, foreground and re
   let bookRequests = 0;
   await page.route("**/api/sync/**", async (route) => {
     if (route.request().url().endsWith("/sync/status")) await route.fulfill({ json: { enabled: false } });
+    else if (route.request().url().endsWith("/sync/reading")) await route.fulfill({json:{events:[],memberIds:[],goalMinutes:30}});
     else { bookRequests++; await route.fulfill({ status: 403, json: { message: "No PC selection" } }); }
   });
   await page.goto(origin + "/mobile");
@@ -68,16 +69,19 @@ test("paired phone waits for a PC sync request across startup, foreground and re
   await page.clock.install();
   await page.reload();
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("button",{name:"电脑与同步",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"电脑与同步",exact:true}).click();
   await expect(page.getByText("已配对电脑书库", { exact: true })).toBeVisible();
   await page.evaluate(() => { window.dispatchEvent(new Event("online")); document.dispatchEvent(new Event("visibilitychange")); });
   await page.clock.runFor(65000);
   expect(bookRequests).toBe(0);
-  await expect(page.locator(".mobile-sync-status")).toContainText("等待电脑选择书籍");
+  await expect(page.locator(".mobile-sync-status")).toContainText("选择想读的书");
   expect(await page.locator(".mobile-app").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   if (process.env.OR_EVIDENCE_DIR) {
     await mkdir(process.env.OR_EVIDENCE_DIR, { recursive: true });
     await page.screenshot({ path: resolve(process.env.OR_EVIDENCE_DIR, "phone-sync-settings-light.png") });
   }
+  await page.getByRole("button",{name:"返回设置",exact:true}).click();
   await page.getByRole("button", { name: "书架", exact: true }).click();
   await expect(page.locator(".mobile-empty-shelf")).toContainText("只带上你想读的书");
   if (process.env.OR_EVIDENCE_DIR) await page.screenshot({ path: resolve(process.env.OR_EVIDENCE_DIR, "phone-sync-empty-shelf.png") });
@@ -111,6 +115,8 @@ test("Android production startup works without modern WebView built-ins", async 
     page.getByRole("heading", { name: "书架", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("button",{name:"电脑与同步",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"电脑与同步",exact:true}).click();
   await expect(
     page.getByRole("heading", { name: "把阅读带在身边" }),
   ).toBeVisible();
@@ -118,6 +124,8 @@ test("Android production startup works without modern WebView built-ins", async 
     page.getByRole("button", { name: "扫描电脑二维码" }),
   ).toBeVisible();
   await expect(page.getByLabel("同步文件与笔记")).toHaveCount(0);
+  await page.getByRole("button",{name:"返回设置",exact:true}).click();
+  await page.getByRole("button",{name:"通用设置",exact:true}).click();
   await page.getByLabel("深色模式", { exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(errors).toEqual([]);
@@ -271,6 +279,8 @@ test("Android scan starts automatically and hands the QR to native pairing", asy
   });
   await page.goto(origin);
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("button",{name:"电脑与同步",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"电脑与同步",exact:true}).click();
   await page
     .getByRole("button", { name: "扫描电脑二维码", exact: true })
     .click();

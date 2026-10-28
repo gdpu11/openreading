@@ -107,3 +107,9 @@ describe("desktop sync selection", () => {
     ).toEqual([]);
   });
 });
+
+it("preserves explicit phone picks alongside a format rule when opening the PC selector", () => {
+ const value:SyncSelection={workspaceIds:["w"],syncScope:{mode:"formats",formats:["pdf"],memberIds:["a"]}};
+ expect(syncFileSelected(value,a)).toBe(true);
+ expect(selected(manualSyncSelection(value,files))).toEqual(["a"]);
+});

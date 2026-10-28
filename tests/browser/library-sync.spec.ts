@@ -113,18 +113,25 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
     });
     await page.goto(base);
     await expect(page.locator(".library-book")).toHaveCount(3);
-    await expect(page.locator(".library-tools > button")).toHaveText([
-      "刷新",
-      "同步",
-    ]);
+    await expect(page.locator(".library-tools > button")).toHaveText(["刷新"]);
+    await expect(
+      page.locator(".library-title-row").getByRole("button", {
+        name: "同步到手机", exact: true,
+      }),
+    ).toBeVisible();
+    if (process.env.OR_EVIDENCE_DIR) {
+      await mkdir(process.env.OR_EVIDENCE_DIR, { recursive: true });
+      await page.screenshot({
+        path: join(process.env.OR_EVIDENCE_DIR, "desktop-sync-entry.png"),
+      });
+    }
     await page
       .getByRole("button", { name: "设置", exact: true })
       .first()
       .click();
     await page.getByRole("button", { name: "手机与同步", exact: true }).click();
-    await expect(page.locator(".sync-scope").first()).toContainText(
-      "当前选中 0 个文件",
-    );
+    await expect(page.locator(".sync-scope")).toHaveCount(0);
+    await expect(page.getByRole("button", {name:"修改同步范围",exact:true})).toHaveCount(0);
     const grantResponse = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/pair/grants") && r.request().method() === "POST",
@@ -159,7 +166,7 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
       .click();
     const device = await (await approved).json();
     await expect(
-      page.getByText("已配对。返回书库选择同步范围并开始同步。", {
+      page.getByText("已配对。可以在手机搜索选书，或返回电脑书库选择同步范围。", {
         exact: true,
       }),
     ).toBeVisible();
@@ -214,16 +221,56 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
       await panel
         .getByRole("button", { name: "开始同步", exact: true })
         .click();
+      await expect(panel.getByLabel("手机接收进度")).toBeVisible();
+      await panel.getByRole("button", {name:"退出同步选择",exact:true}).click();
       await expect(panel).toHaveCount(0);
     };
-    await page.getByRole("button", { name: "同步", exact: true }).click();
+    // Start with another authorized workspace so a stale full-scope retry
+    // would restore its authorization after the concurrent window removes it.
+    await expect.poll(async () => (await (await pc.request.get(base + `/api/workspaces/${other.id}/documents`)).json()).items.length).toBe(1);
+    const otherBook = (await (await pc.request.get(base + `/api/workspaces/${other.id}/documents`)).json()).items[0];
+    expect((await pc.request.put(`${base}/api/devices/${device.id}/scope`, {headers,data:{workspaceIds:[ws.id, other.id],syncScope:{mode:"manual",memberIds:[otherBook.id]}}})).ok()).toBeTruthy();
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
     await choosePhone();
     await page.getByRole("checkbox", { name: /选择同步 .*慢慢读.md/ }).check();
     expect(await page.evaluate(() => (window as any).openedBooks || 0)).toBe(0);
+    // Another window removes a workspace after this panel opened. Reload
+    // the actual scope instead of attaching a new revision to stale checks.
+    expect((await pc.request.put(`${base}/api/devices/${device.id}/scope`, {headers,data:{workspaceIds:[ws.id],syncScope:{mode:"manual",memberIds:[]}}})).ok()).toBeTruthy();
+    await panel.getByRole("button",{name:"开始同步",exact:true}).click();
+    await expect(page.getByText("同步清单已在其他窗口更新，已载入最新清单，请重新核对勾选。",{exact:true})).toBeVisible();
+    await expect(page.getByRole("checkbox",{name:/选择同步 .*慢慢读.md/})).not.toBeChecked();
+    await save();
+    const afterConflict = (await (await pc.request.get(base + "/api/devices")).json()).find((d: any) => d.id === device.id);
+    expect(afterConflict.workspaceIds).toEqual([ws.id]);
+    expect(await snapshot(phoneHeaders)).toHaveLength(0);
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
+    await choosePhone();
+    await page.getByRole("checkbox", { name: /选择同步 .*慢慢读.md/ }).check();
     await save();
     expect((await snapshot(phoneHeaders)).map((d: any) => d.title)).toEqual([
       expect.stringContaining("慢慢读.md"),
     ]);
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
+    await choosePhone();
+    const selectedDevice = (await (await pc.request.get(base + "/api/devices")).json()).find((d: any) => d.id === device.id);
+    const progressBody = {revision:selectedDevice.syncScope.revision,phase:"downloading",done:0,total:1,title:"慢慢读.md",received:5,bytes:10};
+    expect((await pc.request.post(base + "/api/sync/progress",{headers:phoneHeaders,data:progressBody})).ok()).toBeTruthy();
+    await expect(panel.getByLabel("手机接收进度")).toContainText("手机正在接收书籍");
+    await expect(panel.getByLabel("手机接收进度")).toContainText("50%");
+    if (process.env.OR_EVIDENCE_DIR) await page.screenshot({path:join(process.env.OR_EVIDENCE_DIR,"desktop-transfer-progress.png")});
+    expect((await pc.request.post(base + "/api/sync/progress",{headers:phoneHeaders,data:{...progressBody,phase:"completed",done:1}})).ok()).toBeTruthy();
+    await expect(panel.getByLabel("手机接收进度")).toContainText("手机已确认接收完成");
+    await page.route("**/api/devices/*/sync-progress",async route=>{
+      const response=await route.fetch();
+      const body=await response.json();
+      await route.fulfill({json:{...body,lastSeenAt:Date.now()-60000}});
+    });
+    await expect(panel.getByLabel("手机接收进度")).toContainText("上次同步已完成");
+    await expect(panel.getByLabel("手机接收进度")).toContainText("手机当前离线");
+    await expect(panel.getByLabel("手机接收进度")).not.toContainText("请保持手机应用打开");
+    await page.unroute("**/api/devices/*/sync-progress");
+    await panel.getByRole("button",{name:"退出同步选择",exact:true}).click();
     expect(await snapshot(secondHeaders)).toHaveLength(0);
     expect(
       await (
@@ -272,7 +319,7 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
     await panel.getByLabel("添加同步文件夹").selectOption(JSON.stringify([sourceFolder.id, ""]));
     await expect(panel).toContainText("本工作区已选 3 本");
     await save();
-    await page.getByRole("button", { name: "同步", exact: true }).click();
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
     await choosePhone();
     await panel.getByLabel("同步整个工作区", { exact: false }).check();
     await expect(panel).toContainText("本工作区已选 3 本");
@@ -284,7 +331,7 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
     await save();
     expect(await snapshot(phoneHeaders)).toHaveLength(3);
     expect(await snapshot(secondHeaders)).toHaveLength(0);
-    await page.getByRole("button", { name: "同步", exact: true }).click();
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
     await choosePhone();
     await panel
       .getByRole("button", { name: "清空本工作区", exact: true })
@@ -293,7 +340,7 @@ test("desktop shelf selects books, folders and a workspace for one phone only", 
     await save();
     expect(await snapshot(phoneHeaders)).toHaveLength(0);
     await page.reload();
-    await page.getByRole("button", { name: "同步", exact: true }).click();
+    await page.getByRole("button", { name: "同步到手机", exact: true }).click();
     await choosePhone();
     await expect(panel).toContainText("本工作区已选 0 本");
     await page.getByRole("button", { name: "切换主题", exact: true }).click();

@@ -35,6 +35,7 @@ export function syncFileSelected(value: SyncSelection, file: SyncFile) {
   )
     return false;
   return (
+    scope.memberIds?.includes(file.id) ||
     scope.mode === "all" ||
     (scope.mode === "formats"
       ? !!scope.formats?.includes(file.format)

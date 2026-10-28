@@ -141,3 +141,17 @@ it("forwards byte ranges to the pinned native connection and preserves Content-R
   );
   expect(await response.text()).toBe("end");
 });
+
+it("releases a stalled native metadata call and allows a later retry", async () => {
+  vi.useFakeTimers();
+  try {
+    fake.request.mockReturnValueOnce(new Promise(() => {}));
+    const first = lanRequest("https://10.0.0.5:53318", "a".repeat(64), "/sync/library", "token", undefined, {}, 5000);
+    const rejected = expect(first).rejects.toThrow("连接电脑超时");
+    await vi.advanceTimersByTimeAsync(6001);
+    await rejected;
+    fake.request.mockResolvedValueOnce({ status:200, headers:{}, body:btoa('{"enabled":true}') });
+    expect(await (await lanRequest("https://10.0.0.5:53318", "a".repeat(64), "/sync/status", "token")).json()).toEqual({enabled:true});
+    expect(fake.request.mock.calls[0][0].timeoutMs).toBe(5000);
+  } finally {vi.useRealTimers();}
+});

@@ -40,7 +40,8 @@ public class LocalSyncPlugin: CAPPlugin, CAPBridgedPlugin {
               url.path.hasPrefix("/api/sync/") || url.path == "/api/pair/claim" || url.path == "/api/pair/status" else { call.reject("无效的局域网同步地址"); return }
         let method = call.getString("method") ?? "GET"
         guard method == "GET" || method == "POST" else { call.reject("无效的同步操作"); return }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 120)
+        let timeout = Double(max(5000, min(120000, call.getInt("timeoutMs") ?? 25000))) / 1000
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         request.httpMethod = method; request.httpShouldHandleCookies = false
         let headers = call.getObject("headers") ?? [:]
         for key in ["Authorization", "Content-Type", "Range"] { if let value = headers[key] as? String { request.setValue(value, forHTTPHeaderField: key) } }
@@ -51,7 +52,7 @@ public class LocalSyncPlugin: CAPPlugin, CAPBridgedPlugin {
         let trust = LocalTrust(pin)
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false; config.httpCookieStorage = nil; config.urlCache = nil
-        config.waitsForConnectivity = true; config.timeoutIntervalForRequest = 120; config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = false; config.timeoutIntervalForRequest = timeout; config.timeoutIntervalForResource = timeout
         let session = URLSession(configuration: config, delegate: trust, delegateQueue: nil)
         session.dataTask(with: request) { data, response, error in
             defer { session.finishTasksAndInvalidate() }

@@ -3,25 +3,8 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { api } from "../api";
 import { MobileDownload } from "./MobileDownload";
-import {
-  SyncScopePicker,
-  validSelection,
-  type SyncSelection,
-  type SyncFile,
-} from "./SyncScopePicker";
 export function SyncSettings({ onError }: { onError: (e: any) => void }) {
   const [workspaces, setWorkspaces] = useState<any[]>([]),
-    [selection, setSelection] = useState<SyncSelection>({
-      workspaceIds: [],
-      syncScope: { mode: "manual", memberIds: [] },
-    }),
-    [files, setFiles] = useState<SyncFile[] | null>(null),
-    [editing, setEditing] = useState<string | null>(null),
-    [deviceSelection, setDeviceSelection] = useState<SyncSelection>({
-      workspaceIds: [],
-      syncScope: { mode: "all" },
-    }),
-    [savedDevice, setSavedDevice] = useState<string | null>(null),
     [devices, setDevices] = useState<any[]>([]),
     [grant, setGrant] = useState<any>(null),
     [status, setStatus] = useState<any>(null),
@@ -49,13 +32,8 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
     void api("/workspaces")
       .then((v) => {
         setWorkspaces(v);
-        setSelection({
-          workspaceIds: v.map((w: any) => w.id),
-          syncScope: { mode: "manual", memberIds: [] },
-        });
       })
       .catch(onError);
-    void api("/pair/catalog").then(setFiles).catch(onError);
     void reload();
     void loadLAN().catch(onError);
   }, []);
@@ -76,7 +54,9 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
     setBusy(true);
     try {
       const next = await api("/pair/grants", "POST", {
-        ...selection,
+        workspaceIds: workspaces.map((w) => w.id),
+        syncScope: { mode: "manual", memberIds: [] },
+        connectionOnly: true,
         ...(cloud ? {} : { origin }),
       });
       setGrant(next);
@@ -121,14 +101,14 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
       <h3>{tr("2. 配对与同步")}</h3>
       <p>
         {tr(
-          "配对只建立连接，默认不下载书籍。在电脑书库点击“同步”，选择书籍、文件夹或整个工作区，再开始同步。",
+          "配对不会自动下载。手机可搜索获授权工作区的书籍并选择同步；也可在电脑书库选择单本、文件夹或整个工作区。",
         )}
       </p>
       {!cloud && (
         <div className="lan-controls">
           <p>
             {tr(
-              "电脑就是书库服务器。手机与电脑连接同一 Wi-Fi 或局域网，扫码只建立连接，书籍由电脑端选择后同步，无需云端账号或自建服务器。",
+              "电脑就是书库服务器。手机与电脑连接同一 Wi-Fi 或局域网，扫码后可在手机选书，也可由电脑选择后同步，无需云端账号或自建服务器。",
             )}
           </p>
           <label>
@@ -206,30 +186,9 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
       )}
       {(cloud || lan?.enabled) && (
         <>
-          {files ? (
-            <SyncScopePicker
-              workspaces={workspaces}
-              files={files}
-              value={selection}
-              disabled={busy}
-              onChange={(value) => {
-                setSelection(value);
-                setGrant(null);
-                setStatus(null);
-                setImage("");
-              }}
-            />
-          ) : (
-            <p>{tr("正在加载文件列表…")}</p>
-          )}
           <button
             className="primary"
-            disabled={
-              busy ||
-              !files ||
-              !validSelection(selection) ||
-              (!cloud && !origin)
-            }
+            disabled={busy || !workspaces.length || (!cloud && !origin)}
             onClick={generate}
           >
             {tr("生成手机配对二维码")}
@@ -264,7 +223,7 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
                   </>
                 ) : status?.state === "approved" ? (
                   <p role="status">
-                    {tr("已配对。返回书库选择同步范围并开始同步。")}
+                    {tr("已配对。可以在手机搜索选书，或返回电脑书库选择同步范围。")}
                   </p>
                 ) : status?.state === "expired" ? (
                   <p>{tr("二维码已过期，请重新生成。")}</p>
@@ -319,19 +278,6 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
               {!d.revokedAt && (
                 <div className="device-actions">
                   <button
-                    disabled={busy || !files}
-                    onClick={() => {
-                      setEditing(d.id);
-                      setSavedDevice(null);
-                      setDeviceSelection({
-                        workspaceIds: d.workspaceIds,
-                        syncScope: { mode: "all", ...d.syncScope },
-                      });
-                    }}
-                  >
-                    {tr("修改同步范围")}
-                  </button>
-                  <button
                     onClick={() =>
                       api("/devices/" + d.id, "DELETE")
                         .then(reload)
@@ -343,50 +289,6 @@ export function SyncSettings({ onError }: { onError: (e: any) => void }) {
                 </div>
               )}
             </div>
-            {editing === d.id && !d.revokedAt && files && (
-              <div className="device-scope-editor">
-                <SyncScopePicker
-                  workspaces={workspaces}
-                  files={files}
-                  value={deviceSelection}
-                  onChange={setDeviceSelection}
-                  disabled={busy}
-                />
-                <p>
-                  {tr(
-                    "修改后下次同步生效。已下载的本地副本不会自动删除，未同步笔记会保留在手机。",
-                  )}
-                </p>
-                <button
-                  className="primary"
-                  disabled={busy || !validSelection(deviceSelection)}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await api("/devices/" + d.id + "/scope", "PUT", {
-                        ...deviceSelection,
-                        expectedRevision: d.syncScope?.revision || "",
-                      });
-                      await reload();
-                      setEditing(null);
-                      setSavedDevice(d.id);
-                    } catch (e) {
-                      onError(e);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  {tr("保存同步范围")}
-                </button>
-                <button disabled={busy} onClick={() => setEditing(null)}>
-                  {tr("取消")}
-                </button>
-              </div>
-            )}
-            {savedDevice === d.id && (
-              <p role="status">{tr("同步范围已保存，下次手机同步时生效。")}</p>
-            )}
           </div>
         ))
       )}

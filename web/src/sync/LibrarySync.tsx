@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, FolderSync, Smartphone, X } from "lucide-react";
-import { api } from "../api";
+import { Check, FolderSync, Smartphone, RefreshCw, X } from "lucide-react";
+import { api, ApiError } from "../api";
 import { tr } from "../i18n";
+import QRCode from "qrcode";
 import {
   manualSyncSelection,
   selectSyncFiles,
@@ -36,7 +37,8 @@ export function useLibrarySync(
     [deviceId, setDeviceId] = useState(""),
     [value, setValue] = useState<SyncSelection>(empty);
   const sequence = useRef(0),
-    request = useRef<SyncRequest>({});
+    request = useRef<SyncRequest>({}),
+    saving = useRef(false);
   const currentWorkspace = useRef(workspaceId);
   currentWorkspace.current = workspaceId;
   function close() {
@@ -104,21 +106,72 @@ export function useLibrarySync(
   }
   async function save() {
     const device = devices.find((d) => d.id === deviceId);
-    if (!device || busy || loading) return;
+    if (!device || saving.current || busy || loading) return;
     const workspace = workspaceId;
+    const turn = sequence.current;
+    saving.current = true;
     setBusy(true);
     try {
-      await api(`/devices/${encodeURIComponent(deviceId)}/scope`, "PUT", {
-        ...value,
-        expectedRevision: device.syncScope?.revision || "",
-      });
-      if (currentWorkspace.current === workspace) {
-        setActive(false);
-        onNotice("同步范围已发送，手机将在连接电脑时接收所选书籍。");
+      const saved = await api(
+        `/devices/${encodeURIComponent(deviceId)}/scope`,
+        "PUT",
+        {
+          ...value,
+          expectedRevision: device.syncScope?.revision || "",
+        },
+      );
+      if (currentWorkspace.current === workspace && turn === sequence.current) {
+        setDevices((all) =>
+          all.map((d) =>
+            d.id === deviceId
+              ? {
+                  ...d,
+                  ...value,
+                  syncScope: { ...value.syncScope, revision: saved.revision },
+                }
+              : d,
+          ),
+        );
+        onNotice("同步任务已保存，下面会显示手机连接与接收进度。");
       }
     } catch (e) {
-      onError(e);
+      if (turn !== sequence.current || currentWorkspace.current !== workspace)
+        return;
+      if (e instanceof ApiError && e.code === "SYNC_SCOPE_CHANGED") {
+        try {
+          const allDevices = await api("/devices");
+          if (
+            turn !== sequence.current ||
+            currentWorkspace.current !== workspace
+          )
+            return;
+          const connected = allDevices.filter(
+            (d: any) => !d.revokedAt && d.expiresAt > Date.now() / 1000,
+          );
+          setDevices(connected);
+          const fresh = connected.find((d: any) => d.id === deviceId);
+          // A new revision must be paired with that revision's entire scope.
+          // Keeping stale checks would silently restore revoked workspaces.
+          setValue(
+            fresh
+              ? manualSyncSelection(
+                  {
+                    workspaceIds: fresh.workspaceIds,
+                    syncScope: { mode: "all", ...fresh.syncScope },
+                  },
+                  files,
+                )
+              : empty(),
+          );
+          onNotice(
+            "同步清单已在其他窗口更新，已载入最新清单，请重新核对勾选。",
+          );
+        } catch (reloadError) {
+          onError(reloadError);
+        }
+      } else onError(e);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -351,6 +404,14 @@ export function LibrarySyncControls({
               {tr(sync.busy ? "正在发送…" : "开始同步")}
             </button>
           </div>
+          <SyncTransferStatus
+            deviceId={sync.deviceId}
+            revision={
+              sync.devices.find((d) => d.id === sync.deviceId)?.syncScope
+                ?.revision || ""
+            }
+            onPair={onPair}
+          />
           <small className="library-sync-note">
             {tr(
               "文件夹和整个工作区包含后续新增书籍；取消单本可排除它。取消同步不会删除手机已有文件和笔记。",
@@ -359,5 +420,211 @@ export function LibrarySyncControls({
         </>
       )}
     </section>
+  );
+}
+
+type TransferProgress = {
+  phase: string;
+  done: number;
+  total: number;
+  title?: string;
+  received: number;
+  bytes: number;
+  message?: string;
+  lastSeenAt: number;
+  updatedAt: number;
+};
+function SyncTransferStatus({
+  deviceId,
+  revision,
+  onPair,
+}: {
+  deviceId: string;
+  revision: string;
+  onPair: () => void;
+}) {
+  const [progress, setProgress] = useState<TransferProgress | null>(null);
+  const [error, setError] = useState("");
+  const [lan, setLan] = useState<any>(null);
+  const [qr, setQr] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [connecting, setConnecting] = useState(false);
+  useEffect(() => {
+    let active = true,
+      busy = false;
+    setProgress(null);
+    setQr("");
+    setError("");
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const next = await api<TransferProgress>(
+          `/devices/${encodeURIComponent(deviceId)}/sync-progress`,
+        );
+        if (active) {
+          setProgress(next);
+          setNow(Date.now());
+          setError("");
+        }
+      } catch {
+        if (active) setError("暂时无法获取手机同步状态，请稍后重试");
+      } finally {
+        busy = false;
+      }
+    };
+    void poll();
+    void api("/lan")
+      .then((v) => {
+        if (active) setLan(v);
+      })
+      .catch(() => {});
+    const timer = setInterval(poll, 2000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [deviceId, revision]);
+  const online = !!progress?.lastSeenAt && now - progress.lastSeenAt < 45000;
+  const active = [
+    "preparing",
+    "checking",
+    "sending",
+    "downloading",
+    "saving",
+  ].includes(progress?.phase || "");
+  const stalled = active && now - (progress?.updatedAt || 0) > 45000;
+  const labels: Record<string, string> = {
+    waiting: "等待手机接收",
+    preparing: "正在准备书籍与笔记",
+    checking: "手机正在检查已下载书籍",
+    sending: "正在发送书籍，等待手机确认",
+    downloading: "手机正在接收书籍",
+    saving: "手机正在校验并保存书籍",
+    completed: online ? "手机已确认接收完成" : "上次同步已完成",
+    failed: "同步已中断，可继续接收",
+  };
+  const origin = lan?.enabled
+    ? lan?.addresses?.find((a: any) => a.interface === "en0")?.origin ||
+      lan?.addresses?.[0]?.origin
+    : undefined;
+  const sizeText = (bytes: number) =>
+    bytes < 1024
+      ? `${bytes} B`
+      : bytes < 1048576
+        ? `${(bytes / 1024).toFixed(1)} KB`
+        : `${(bytes / 1048576).toFixed(1)} MB`;
+  async function connect() {
+    setConnecting(true);
+    try {
+      const next = await api("/lan");
+      setLan(next);
+      const address =
+        next.addresses?.find((a: any) => a.interface === "en0")?.origin ||
+        next.addresses?.[0]?.origin;
+      if (!next.enabled || !address) {
+        onPair();
+        return;
+      }
+      const payload = {
+        origin: address,
+        certificateFingerprint: next.certificateFingerprint,
+      };
+      setQr(
+        await QRCode.toDataURL(
+          address +
+            "/mobile#connect=" +
+            encodeURIComponent(JSON.stringify(payload)),
+          { width: 220, margin: 2 },
+        ),
+      );
+    } catch {
+      setError("无法生成连接二维码，请检查局域网同步是否开启");
+    } finally {
+      setConnecting(false);
+    }
+  }
+  return (
+    <div className="sync-transfer-status" aria-label={tr("手机接收进度")}>
+      <div className="sync-transfer-heading">
+        <strong>
+          {tr(
+            stalled
+              ? "传输暂时停住，等待手机继续"
+              : labels[progress?.phase || "waiting"] || "等待手机接收",
+          )}
+        </strong>
+        <span>
+          {tr(
+            online
+              ? "手机已连接"
+              : progress?.lastSeenAt
+                ? "手机当前离线"
+                : "暂未连接到手机",
+          )}
+        </span>
+      </div>
+      {progress?.phase === "completed" && (
+        <p>
+          {tr("完成时间：")}
+          {new Date(progress.updatedAt).toLocaleString()}
+        </p>
+      )}
+      {progress && progress.total > 0 && (
+        <>
+          <progress
+            aria-label={tr("书籍接收进度")}
+            max={progress.total}
+            value={
+              progress.done +
+              (progress.phase === "downloading" && progress.bytes > 0
+                ? Math.min(progress.received / progress.bytes, 0.99)
+                : 0)
+            }
+          />
+          <p>
+            {tr("已接收 {0}/{1} 本")
+              .replace("{0}", String(progress.done))
+              .replace("{1}", String(progress.total))}
+          </p>
+        </>
+      )}
+      {progress?.title && (
+        <p>
+          {progress.title}
+          {progress.bytes > 0 &&
+            ` · ${Math.floor((progress.received * 100) / progress.bytes)}% · ${sizeText(progress.received)} / ${sizeText(progress.bytes)}`}
+        </p>
+      )}
+      {progress?.message && <p role="alert">{progress.message}</p>}
+      {(!online || stalled) && progress?.phase !== "completed" && (
+        <p>
+          {tr(
+            "请保持手机应用打开。若电脑换过网络，请更新手机连接地址；同一 Wi-Fi 下也可能存在设备隔离或 VPN 阻断。",
+          )}
+        </p>
+      )}
+      {origin && (
+        <p className="sync-current-address">
+          {tr("当前电脑地址：")}
+          {origin}
+        </p>
+      )}
+      <button disabled={connecting} onClick={() => void connect()}>
+        <RefreshCw size={14} />
+        {tr("更新手机连接")}
+      </button>
+      {qr && (
+        <div className="sync-reconnect-qr">
+          <img src={qr} alt={tr("更新电脑地址二维码")} />
+          <p>
+            {tr(
+              "手机更新到最新版后，在设置中点“更新电脑连接”扫码。校验同一台电脑后更新地址，书籍、笔记和同步选择都会保留。",
+            )}
+          </p>
+        </div>
+      )}
+      {error && <p role="alert">{tr(error)}</p>}
+    </div>
   );
 }

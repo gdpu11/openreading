@@ -3,11 +3,18 @@ const fake = vi.hoisted(() => ({
   chunks: new Map<string, { blob: Blob; total: number }>(),
   files: new Map<string, Blob>(),
   failCommit: false,
+  native: false,
+  commits: [] as { key: string; total: number }[],
 }));
 vi.mock("./storage", async (original) => {
   const real = await original<typeof import("./storage")>();
   return {
     ...real,
+    nativeChunkCommit: () => fake.native,
+    commitChunks: async (key: string, total: number) => {
+      fake.commits.push({ key, total });
+      if (fake.failCommit) throw Error("disk full");
+    },
     loadChunk: async (key: string, offset: number) =>
       fake.chunks.get(key + ":" + offset),
     saveChunk: async (key: string, offset: number, chunk: any) => {
@@ -40,6 +47,8 @@ beforeEach(() => {
   fake.chunks.clear();
   fake.files.clear();
   fake.failCommit = false;
+  fake.native = false;
+  fake.commits = [];
 });
 
 it("resumes a partially downloaded file after a new invocation and keeps progress above zero", async () => {
@@ -161,4 +170,66 @@ it("saves empty files and empty resources without an invalid range loop", async 
     () => {},
   );
   expect(fake.files.get(emptyKey)?.size).toBe(0);
+});
+
+it("commits native ranges without constructing a whole-file Blob and waits for the saving stage", async () => {
+  fake.native = true;
+  const stages: string[] = [];
+  const progress: number[] = [];
+  await downloadBlob(
+    key,
+    data.length,
+    async (range) => part(range),
+    (received) => progress.push(received),
+    async (stage) => {
+      stages.push(stage);
+      expect(progress.at(-1)).toBe(data.length);
+      expect(fake.commits).toHaveLength(0);
+      expect(fake.chunks.size).toBe(3);
+      await Promise.resolve();
+    },
+  );
+  expect(stages).toEqual(["saving"]);
+  expect(fake.commits).toEqual([{ key, total: data.length }]);
+  expect(fake.files.size).toBe(0);
+  expect(fake.chunks.size).toBe(0);
+});
+
+it("retries a native save failure using durable chunks without re-downloading", async () => {
+  fake.native = true;
+  fake.failCommit = true;
+  await expect(
+    downloadBlob(
+      key,
+      data.length,
+      async (range) => part(range),
+      () => {},
+    ),
+  ).rejects.toThrow("disk full");
+  expect(fake.chunks.size).toBe(3);
+  fake.failCommit = false;
+  const request = vi.fn();
+  await downloadBlob(key, data.length, request, () => {});
+  expect(request).not.toHaveBeenCalled();
+  expect(fake.commits).toHaveLength(2);
+  expect(fake.chunks.size).toBe(0);
+});
+
+it("splits a full native response into durable ranges before committing", async () => {
+  fake.native = true;
+  await downloadBlob(
+    key,
+    data.length,
+    async () => new Response(data),
+    () => {},
+    () => {
+      expect([...fake.chunks.values()].map((c) => c.blob.size)).toEqual([
+        size,
+        size,
+        31,
+      ]);
+    },
+  );
+  expect(fake.commits).toEqual([{ key, total: data.length }]);
+  expect(fake.chunks.size).toBe(0);
 });

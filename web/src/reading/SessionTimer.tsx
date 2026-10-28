@@ -11,12 +11,14 @@ export function SessionTimer({
   enabled,
   record,
   show,
+  events,
 }: {
   host: RefObject<HTMLDivElement | null>;
   member: string;
   enabled: boolean;
   record?: (event: ReadingEvent) => void;
   show: boolean;
+  events?: ReadingEvent[];
 }) {
   const session = useReadingActivity(host, member, enabled, record);
   const [history, setHistory] = useState({
@@ -25,7 +27,7 @@ export function SessionTimer({
     error: "",
   });
   useEffect(() => {
-    if (!show) return;
+    if (!show || events !== undefined) return;
     let alive = true,
       loading = false;
     const load = async () => {
@@ -71,12 +73,12 @@ export function SessionTimer({
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
     };
-  }, [member, show]);
+  }, [member, show, events !== undefined]);
   if (!show) return null;
-  const loaded = history.member === member;
+  const loaded = events !== undefined || history.member === member;
   const total = bookReadingMilliseconds(
     [
-      ...(loaded ? history.events : []),
+      ...(events || (loaded ? history.events : [])),
       ...(session.member === member ? session.intervals : []),
     ],
     member,

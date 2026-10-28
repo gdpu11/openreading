@@ -75,6 +75,14 @@ test("phone restarts with completed files cached and a partial file resumed at i
     let restart = false,
       finished = false;
     await context.route("**/api/sync/**", async (route) => {
+      if (route.request().url().endsWith("/sync/progress")) {
+        await route.fulfill({ json: {ok:true} });
+        return;
+      }
+      if (route.request().url().endsWith("/sync/reading")) {
+        await route.fulfill({status:404,json:{code:"NOT_FOUND",message:"legacy fixture"}});
+        return;
+      }
       if (route.request().url().endsWith("/sync/status")) {
         // These books were explicitly requested from the PC before restarting.
         await route.fulfill({ json: { enabled: true } });
@@ -119,6 +127,7 @@ test("phone restarts with completed files cached and a partial file resumed at i
     );
     await phone.goto(base + "/mobile");
     await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button",{name:"电脑与同步",exact:true}).click();
     await expect(
       phone.getByRole("button", { name: "扫描电脑二维码", exact: true }),
     ).toBeVisible();
@@ -146,6 +155,7 @@ test("phone restarts with completed files cached and a partial file resumed at i
     }, base);
     await phone.reload();
     await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button",{name:"电脑与同步",exact:true}).click();
     await expect(phone.locator(".mobile-sync-status")).toContainText(
       "进度已保存",
     );
@@ -163,8 +173,9 @@ test("phone restarts with completed files cached and a partial file resumed at i
     );
     await phone.goto(base + "/mobile");
     await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button",{name:"电脑与同步",exact:true}).click();
     await expect(phone.locator(".mobile-sync-status")).toContainText(
-      "已同步 1/2 个文件",
+      /已同步 1\/2 (个文件|本)/,
     );
     release();
     await expect(phone.locator(".mobile-sync-status")).toContainText(
@@ -196,6 +207,8 @@ test("phone restarts with completed files cached and a partial file resumed at i
     finished = true;
     await phone.reload();
     await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button",{name:"电脑与同步",exact:true}).click();
+    if(await phone.getByRole("button",{name:"返回设置",exact:true}).count())await phone.getByRole("button",{name:"返回设置",exact:true}).click();
     await phone.getByRole("button", { name: "书架", exact: true }).click();
     await expect(
       phone.getByRole("button", { name: /需要续传.txt/ }),
@@ -207,10 +220,12 @@ test("phone restarts with completed files cached and a partial file resumed at i
     finished = false;
     library.workspaces[0].documents = [];
     await phone.getByRole("button", { name: "设置", exact: true }).click();
+    await phone.getByRole("button",{name:"电脑与同步",exact:true}).click();
     await phone.evaluate(() => window.dispatchEvent(new Event("online")));
     await expect(phone.locator(".mobile-sync-status")).toContainText(
       "未选择新书，手机已有副本已保留",
     );
+    if(await phone.getByRole("button",{name:"返回设置",exact:true}).count())await phone.getByRole("button",{name:"返回设置",exact:true}).click();
     await phone.getByRole("button", { name: "书架", exact: true }).click();
     await expect(phone.locator(".mobile-document")).toHaveCount(2);
     await expect(phone.locator(".mobile-document > small")).toHaveText([

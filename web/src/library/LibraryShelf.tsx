@@ -78,7 +78,18 @@ export function LibraryShelf({
     <section className="desktop-library">
       <div className="library-heading">
         <div>
-          <h1>{tr("书库")}</h1>
+          <div className="library-title-row">
+            <h1>{tr("书库")}</h1>
+            <button
+              className="library-sync-toggle"
+              aria-pressed={sync.active}
+              disabled={sync.busy}
+              onClick={() => (sync.active ? sync.close() : void sync.open())}
+            >
+              <Smartphone size={16} />
+              <span>{tr("同步到手机")}</span>
+            </button>
+          </div>
           <p>{tr("独立窗口阅读，多本书并排对照。")}</p>
         </div>
         <button className="primary" onClick={importFiles}>
@@ -112,14 +123,6 @@ export function LibraryShelf({
           >
             <RefreshCw size={16} className={refreshing ? "spinning" : ""} />
             <span>{tr("刷新")}</span>
-          </button>
-          <button
-            aria-pressed={sync.active}
-            disabled={sync.busy}
-            onClick={() => (sync.active ? sync.close() : void sync.open())}
-          >
-            <Smartphone size={16} />
-            <span>{tr("同步")}</span>
           </button>
           <HoverDetails className="library-sources">
             <summary>

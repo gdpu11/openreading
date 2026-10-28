@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -227,5 +228,44 @@ func TestSyncReauthorizationKeepsDeviceIdentityAndOperationReceipts(t *testing.T
 	}
 	if rec := deviceReq(c, token, "GET", "/api/sync/library", nil); rec.Code != 200 {
 		t.Fatal(rec.Code, rec.Body.String())
+	}
+}
+
+func TestConnectionOnlyPairingPreservesActiveSelectionAndStartsNewPhonesEmpty(t *testing.T) {
+	c, ws, book := syncSetup(t)
+	token, d := approveDevice(t, c, ws)
+	saved := c.ok("PUT", "/api/devices/"+str(d, "id")+"/scope", M{"workspaceIds": []any{ws["id"]}, "syncScope": M{"mode": "manual", "memberIds": []any{book["id"]}}})
+	pair := func(token string) M {
+		g := c.ok("POST", "/api/pair/grants", M{"workspaceIds": []any{ws["id"]}, "syncScope": M{"mode": "all"}, "connectionOnly": true})
+		if r := deviceReq(c, token, "POST", "/api/pair/claim", M{"id": g["id"], "secret": g["secret"], "token": token, "name": "刷新连接"}); r.Code != 200 {
+			t.Fatal(r.Code, r.Body.String())
+		}
+		return c.ok("POST", "/api/pair/grants/"+str(g, "id")+"/approve", M{})
+	}
+	renewed := pair(token)
+	if renewed["id"] != d["id"] {
+		t.Fatal("device identity changed")
+	}
+	device, e := c.s.authenticateDevice(func() *http.Request {
+		r := httptest.NewRequest("GET", "http://localhost", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		return r
+	}())
+	if e != nil {
+		t.Fatal(e)
+	}
+	scope := obj(device, "syncScope")
+	if str(scope, "revision") != str(saved, "revision") || len(arr(scope, "memberIds")) != 1 || scope["autoSync"] != true {
+		t.Fatal("pairing erased selected books", scope)
+	}
+	newToken := id() + id()
+	pair(newToken)
+	if docs := snapshotIDs(syncSnapshot(t, c, newToken)); len(docs) != 0 {
+		t.Fatal("connection-only QR granted books to a new phone")
+	}
+	c.ok("DELETE", "/api/devices/"+str(d, "id"), nil)
+	pair(token)
+	if docs := snapshotIDs(syncSnapshot(t, c, token)); len(docs) != 0 {
+		t.Fatal("revoked selection was re-enabled")
 	}
 }
