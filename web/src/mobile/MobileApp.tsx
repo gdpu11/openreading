@@ -30,7 +30,7 @@ import { tr, locale } from "../i18n";
 import { ReadingStats } from "../reading/ReadingStats";
 import type { ReadingEvent } from "../reading/data";
 import { useEffect, useRef, useState } from "react";
-import { Capacitor, SystemBars } from "@capacitor/core";
+import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { CapacitorBarcodeScanner } from "@capacitor/barcode-scanner";
 import {
@@ -139,7 +139,8 @@ export function MobileApp() {
           ? "dark"
           : "light",
     }));
-  const state = useRef<MobileState>(emptyState()),
+  const appElement = useRef<HTMLDivElement>(null),
+    state = useRef<MobileState>(emptyState()),
     ordInput = useRef<HTMLInputElement>(null),
     reader = useRef<ReaderAdapter>(null),
     syncing = useRef(false),
@@ -730,15 +731,40 @@ export function MobileApp() {
   };
   const fullScreen = !!doc || statsMode;
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    void (fullScreen ? SystemBars.hide() : SystemBars.show()).catch(() => {});
-    return () => {void SystemBars.show().catch(() => {});};
-  }, [fullScreen, foreground]);
+    const backgroundColor = appElement.current &&
+      getComputedStyle(appElement.current).getPropertyValue("--paper").trim()
+        .replace(/^#([a-f0-9])([a-f0-9])([a-f0-9])$/i, "#$1$1$2$2$3$3");
+    if (!backgroundColor) return;
+    const root = document.documentElement, body = document.body;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    const previous = [root.style.backgroundColor, body.style.backgroundColor, meta?.content];
+    root.style.backgroundColor = body.style.backgroundColor = backgroundColor;
+    if (meta) meta.content = backgroundColor;
+    let active = true;
+    const update = async () => {
+      if (!Capacitor.isNativePlatform()) return;
+      // SystemBars.setStyle resets the native decor background. Apply the
+      // reading color afterwards, including the padding outside the WebView.
+      await SystemBars.setStyle({style: prefs.theme === "dark" ? SystemBarsStyle.Dark : SystemBarsStyle.Light});
+      if (!active) return;
+      await (fullScreen && foreground ? SystemBars.hide() : SystemBars.show());
+      if (active && readingDisplayAvailable())
+        await ReadingDisplay.set({backgroundColor});
+    };
+    void update().catch(e => { if (active) setError(e.message); });
+    return () => {
+      active = false;
+      root.style.backgroundColor = previous[0] || "";
+      body.style.backgroundColor = previous[1] || "";
+      if (meta) meta.content = previous[2] || "";
+    };
+  }, [fullScreen, !!doc, foreground, prefs.theme]);
   useEffect(() => {
     if (!readingDisplayAvailable()) return;
     void ReadingDisplay.set({active: !!doc && foreground, keepAwake: prefs.keepAwake !== false, brightness: prefs.brightness ?? -1}).catch(e => setError(e.message));
   }, [!!doc, foreground, prefs.keepAwake, prefs.brightness]);
   useEffect(() => () => {
+    if (Capacitor.isNativePlatform()) void SystemBars.show().catch(() => {});
     if (readingDisplayAvailable()) void ReadingDisplay.set({active: false}).catch(() => {});
   }, []);
   const backAction = useRef<() => boolean>(() => false);
@@ -767,6 +793,7 @@ export function MobileApp() {
   }, []);
   return (
     <div
+      ref={appElement}
       className={"mobile-app" + (doc ? " reader-mode" : "") + (statsMode ? " mobile-stats-mode" : "")}
       data-chrome-visible={readerChrome}
       data-reading-theme={doc ? prefs.theme : undefined}

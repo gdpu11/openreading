@@ -237,7 +237,7 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
         DeviceVault: ["get", "set", "clear"],
         Filesystem: ["readFile", "writeFile", "rmdir"],
         App: ["addListener", "removeListener","minimizeApp"],
-        SystemBars: ["hide","show"],
+        SystemBars: ["hide","show","setStyle"],
         ReadingDisplay: ["set"],
         CapacitorBarcodeScanner: ["scanBarcode"],
         Share: ["share"],
@@ -360,7 +360,22 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await mobile.getByRole("button", { name: /电脑原文.txt/ }).click();
     await expect(mobile.locator(".plain-text")).toHaveText(text);
     await expect.poll(() => systemBars.at(-1)).toBe("hide");
-    await expect.poll(() => readingDisplays.at(-1)?.active).toBe(true);
+    await expect.poll(() => readingDisplays.filter(v => v.active !== undefined).at(-1)?.active).toBe(true);
+    await mobile.locator(".mobile-reader-wrap .reader").click({position:{x:195,y:300}});
+    await mobile.getByRole("button", {name:"切换深色阅读",exact:true}).click();
+    await expect(mobile.locator(".mobile-app")).toHaveAttribute("data-reading-theme", "dark");
+    await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#17191c");
+    expect(await mobile.evaluate(() => [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.body).backgroundColor, document.querySelector('meta[name="theme-color"]')?.getAttribute("content")])).toEqual(["rgb(23, 25, 28)","rgb(23, 25, 28)","#17191c"]);
+    await mobile.evaluate(() => (window as any).nativeListeners.appStateChange({isActive:false}));
+    await expect.poll(() => systemBars.at(-1)).toBe("show");
+    await expect.poll(() => readingDisplays.filter(v => v.active !== undefined).at(-1)?.active).toBe(false);
+    await mobile.evaluate(() => (window as any).nativeListeners.appStateChange({isActive:true}));
+    await expect.poll(() => systemBars.at(-1)).toBe("hide");
+    await expect.poll(() => readingDisplays.filter(v => v.active !== undefined).at(-1)?.active).toBe(true);
+    await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#17191c");
+    await mobile.getByRole("button", {name:"切换浅色阅读",exact:true}).click();
+    await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#ffffff");
+    await mobile.locator(".mobile-reader-wrap .reader").click({position:{x:195,y:300}});
     await mobile.bringToFront();
     await mobile.clock.runFor(65000);
     await page
@@ -387,10 +402,12 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await mobile.evaluate(() => (window as any).nativeListeners.backButton({canGoBack:false}));
     await expect(mobile.locator(".mobile-app")).not.toHaveClass(/reader-mode/);
     await expect.poll(() => systemBars.at(-1)).toBe("show");
-    await expect.poll(() => readingDisplays.at(-1)?.active).toBe(false);
+    await expect.poll(() => readingDisplays.filter(v => v.active !== undefined).at(-1)?.active).toBe(false);
+    await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#fafafa");
     await mobile.getByRole("button", { name: "设置", exact: true }).click();
     await mobile.getByRole("button", {name:"电脑与同步",exact:true}).click();
     await mobile.getByRole("button", { name: "阅读数据", exact: true }).click();
+    await expect.poll(() => systemBars.at(-1)).toBe("hide");
     await expect(mobile.locator(".reading-stats")).toContainText(
       "阅读时间",
     );
@@ -402,6 +419,7 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     expect(sharedFiles[0]).toMatch(/\.csv$/);
     await mobile.evaluate(() => (window as any).nativeListeners.backButton({canGoBack:false}));
     await expect(mobile.locator(".reading-stats-overlay")).toHaveCount(0);
+    await expect.poll(() => systemBars.at(-1)).toBe("show");
     await showPhoneShelf();
     await mobile.getByRole("button", { name: /电脑原文.txt/ }).click();
     await expect(mobile.locator(".plain-text")).toHaveText(text);

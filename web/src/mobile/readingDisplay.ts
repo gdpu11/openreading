@@ -4,7 +4,8 @@ export const readingDisplayAvailable = () =>
   Capacitor.isPluginAvailable("ReadingDisplay");
 export const ReadingDisplay = registerPlugin<{
   set: (options: {
-    active: boolean;
+    active?: boolean;
+    backgroundColor?: string;
     keepAwake?: boolean;
     brightness?: number;
   }) => Promise<void>;
