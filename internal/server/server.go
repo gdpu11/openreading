@@ -355,6 +355,7 @@ func (s *Server) routes() {
 	s.syncRoutes()
 	s.lanRoutes()
 	s.mobileDownloadRoutes()
+	s.mobileUpdateRoutes()
 	s.workspaceRoutes()
 	s.route("GET /api/documents/{m}/deletion-preview", s.bookDeletionPreview)
 	s.route("PATCH /api/documents/{m}", s.libraryBook)

@@ -7,7 +7,7 @@ android {
         applicationId "cn.ixiaoshi.openreading"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18
+        versionCode 21
         versionName "1.6.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -56,3 +56,21 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+// Version metadata is embedded in the same APK served by the desktop updater.
+def updateAssets = layout.buildDirectory.dir("generated/updateAssets")
+android.sourceSets.main.assets.srcDir(updateAssets)
+tasks.register("generateUpdateMetadata") {
+    inputs.property("versionCode", android.defaultConfig.versionCode)
+    inputs.property("versionName", android.defaultConfig.versionName)
+    outputs.dir(updateAssets)
+    doLast {
+        def folder = updateAssets.get().asFile
+        folder.mkdirs()
+        new File(folder, "openreading-update.json").text = groovy.json.JsonOutput.toJson([
+            versionCode: android.defaultConfig.versionCode,
+            versionName: android.defaultConfig.versionName
+        ])
+    }
+}
+tasks.named("preBuild").configure { dependsOn("generateUpdateMetadata") }

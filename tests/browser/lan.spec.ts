@@ -6,6 +6,7 @@ import { resolve, join } from "node:path";
 import https from "node:https";
 import { createHash } from "node:crypto";
 import net from "node:net";
+import JSZip from "jszip";
 
 test.use({ trace: "off", screenshot: "off", actionTimeout: 10000 });
 test("computer-only LAN pairing and phone offline notes through a simulated native bridge", async ({
@@ -17,9 +18,13 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
   );
   await mkdir(readingEvidence, { recursive: true });
   const dir = await mkdtemp(join(tmpdir(), "openreading-lan-ui-"));
+  const updateZip=new JSZip();
+  updateZip.file("assets/openreading-update.json",JSON.stringify({versionCode:20,versionName:"1.6.6"}));
+  const updateAPK=join(dir,"update.apk");
+  await writeFile(updateAPK,await updateZip.generateAsync({type:"nodebuffer"}));
   const service = spawn(
     resolve(process.env.OR_TEST_BINARY || "release/lan-test-server"),
-    ["--port", "0", "--data-dir", join(dir, "data"), "--machine-readable"],
+    ["--port", "0", "--data-dir", join(dir, "data"), "--android-apk", updateAPK, "--machine-readable"],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   const ready = await new Promise<any>((res, rej) => {
@@ -137,6 +142,8 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     let shared = 0, nativeCommits = 0;
     const transferPhases: string[] = [];
     const sharedFiles: string[] = [];
+    const upgradeCalls: any[] = [];
+    const speechCalls: any[] = [];
     const readingDisplays: any[] = [], systemBars: string[] = [], requestedBooks:string[]=[];
     await phone.exposeFunction(
       "nativeLAN",
@@ -192,6 +199,13 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
           sharedFiles.push(opts.files[0]);
           return {};
         }
+        if (plugin === "AppUpdate") {
+          upgradeCalls.push({method,...opts});
+          if(method==="info")return {versionCode:19,versionName:"1.6.6"};
+          if(method==="install")return {needsPermission:upgradeCalls.filter(v=>v.method==="install").length===1};
+          return {};
+        }
+        if (plugin === "ReadingSpeech") {speechCalls.push({method,...opts});return {};}
         if (plugin === "SystemBars") {systemBars.push(method);return {};}
         if (plugin === "ReadingDisplay") {readingDisplays.push(opts);return {};}
         if (plugin === "App") return {};
@@ -239,6 +253,8 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
         App: ["addListener", "removeListener","minimizeApp"],
         SystemBars: ["hide","show","setStyle"],
         ReadingDisplay: ["set"],
+        ReadingSpeech: ["speak","stop"],
+        AppUpdate: ["info","download","install","addListener","removeListener"],
         CapacitorBarcodeScanner: ["scanBarcode"],
         Share: ["share"],
       };
@@ -345,6 +361,19 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await expect(mobile.getByRole("button",{name:"手机想读.md",exact:true})).toBeVisible();
     await expect(mobile.getByRole("button",{name:"纸上阅读.md",exact:true})).toHaveCount(0);
     await expect(mobile.getByRole("button",{name:"电脑原文.txt",exact:true})).toBeVisible();
+    await mobile.getByRole("button",{name:"设置",exact:true}).click();
+    await mobile.getByRole("button",{name:"检查更新",exact:true}).click();
+    await expect(mobile.locator(".mobile-update-page")).toContainText("当前版本 1.6.6 · 19");
+    await mobile.getByRole("button",{name:"检查更新",exact:true}).click();
+    await expect(mobile.locator(".mobile-update-release")).toContainText("发现新版本 1.6.6 · 20");
+    await mobile.getByRole("button",{name:"下载升级包",exact:true}).click();
+    await expect(mobile.getByRole("button",{name:"安装新版本",exact:true})).toBeEnabled();
+    expect(upgradeCalls.find(v=>v.method==="download").sha256).toMatch(/^[a-f0-9]{64}$/);
+    await mobile.getByRole("button",{name:"安装新版本",exact:true}).click();
+    await expect(mobile.locator(".mobile-update-page")).toContainText("请允许 Open Reading 安装应用");
+    await mobile.getByRole("button",{name:"安装新版本",exact:true}).click();
+    await expect(mobile.locator(".mobile-update-page")).toContainText("已打开系统安装页");
+    await mobile.getByRole("button",{name:"返回设置",exact:true}).click();
     // Address refresh uses the same certificate and existing token, without a new grant.
     const originalCredential = JSON.parse(memory.get("credential")!);
     await mobile.getByRole("button",{name:"设置",exact:true}).click();
@@ -373,6 +402,15 @@ test("computer-only LAN pairing and phone offline notes through a simulated nati
     await expect.poll(() => systemBars.at(-1)).toBe("hide");
     await expect.poll(() => readingDisplays.filter(v => v.active !== undefined).at(-1)?.active).toBe(true);
     await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#17191c");
+    // Huawei/Android WebViews may have no Web Speech API at all.
+    await mobile.evaluate(() => Object.defineProperty(window,"speechSynthesis",{value:undefined,configurable:true}));
+    await mobile.getByRole("button",{name:"朗读",exact:true}).click();
+    await mobile.getByRole("button",{name:"开始朗读",exact:true}).click();
+    await expect.poll(() => speechCalls.filter(v=>v.method==="speak").length).toBeGreaterThan(0);
+    expect(speechCalls.filter(v=>v.method==="speak").map(v=>v.text).join("")).toBe(text);
+    expect(speechCalls.find(v=>v.method==="speak").language).toBe("zh-CN");
+    await expect(mobile.getByText("此设备不支持朗读",{exact:true})).toHaveCount(0);
+    await mobile.evaluate(() => (window as any).nativeListeners.backButton({canGoBack:false}));
     await mobile.getByRole("button", {name:"切换浅色阅读",exact:true}).click();
     await expect.poll(() => readingDisplays.filter(v => v.backgroundColor).at(-1)?.backgroundColor).toBe("#ffffff");
     await mobile.locator(".mobile-reader-wrap .reader").click({position:{x:195,y:300}});

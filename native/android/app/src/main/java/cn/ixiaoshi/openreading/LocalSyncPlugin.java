@@ -26,15 +26,9 @@ public class LocalSyncPlugin extends Plugin {
         byte[] bytes = MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
         StringBuilder out = new StringBuilder(); for(byte b:bytes) out.append(String.format(Locale.ROOT,"%02x",b&255)); return out.toString();
     }
-    @PluginMethod public void request(PluginCall call) {
-        IO.execute(() -> {
-            HttpsURLConnection connection = null;
-            try {
-                URL url = new URL(Objects.requireNonNull(call.getString("url")));
-                String pin = call.getString("fingerprint", "");
-                String method = call.getString("method", "GET");
-                String path = url.toURI().normalize().getPath();
-                if (!url.getProtocol().equals("https") || !privateHost(url.getHost()) || url.getUserInfo()!=null || !pin.matches("[a-f0-9]{64}") || !(method.equals("GET")||method.equals("POST")) || !(path.startsWith("/api/sync/")||path.equals("/api/pair/claim")||path.equals("/api/pair/status"))) throw new IllegalArgumentException("无效的局域网同步地址");
+    static HttpsURLConnection openPinned(URL url, String pin) throws Exception {
+        if (!url.getProtocol().equals("https") || !privateHost(url.getHost()) || url.getUserInfo()!=null || !pin.matches("[a-f0-9]{64}"))
+            throw new IllegalArgumentException("无效的局域网同步地址");
                 X509TrustManager trust = new X509TrustManager() {
                     public X509Certificate[] getAcceptedIssuers() {return new X509Certificate[0];}
                     public void checkClientTrusted(X509Certificate[] chain,String auth) throws CertificateException {throw new CertificateException("Client certificates unsupported");}
@@ -44,13 +38,25 @@ public class LocalSyncPlugin extends Plugin {
                     }
                 };
                 SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new TrustManager[]{trust},new SecureRandom());
-                connection=(HttpsURLConnection)url.openConnection(Proxy.NO_PROXY);
+                HttpsURLConnection connection=(HttpsURLConnection)url.openConnection(Proxy.NO_PROXY);
                 connection.setSSLSocketFactory(tls.getSocketFactory());
                 // Identity is the exact QR-pinned certificate, independent of a
                 // computer's DHCP address. Never alter the global TLS verifier.
                 connection.setHostnameVerifier((host,session)->{
                     try{return host.equals(url.getHost())&&fingerprint((X509Certificate)session.getPeerCertificates()[0]).equals(pin);}catch(Exception e){return false;}
                 });
+        return connection;
+    }
+    @PluginMethod public void request(PluginCall call) {
+        IO.execute(() -> {
+            HttpsURLConnection connection = null;
+            try {
+                URL url = new URL(Objects.requireNonNull(call.getString("url")));
+                String pin = call.getString("fingerprint", "");
+                String method = call.getString("method", "GET");
+                String path = url.toURI().normalize().getPath();
+                if (!url.getProtocol().equals("https") || !privateHost(url.getHost()) || url.getUserInfo()!=null || !pin.matches("[a-f0-9]{64}") || !(method.equals("GET")||method.equals("POST")) || !(path.startsWith("/api/sync/")||path.equals("/api/pair/claim")||path.equals("/api/pair/status"))) throw new IllegalArgumentException("无效的局域网同步地址");
+                connection = openPinned(url, pin);
                 int timeout = Math.max(5000, Math.min(120000, call.getInt("timeoutMs", 25000)));
                 connection.setInstanceFollowRedirects(false);connection.setUseCaches(false);connection.setConnectTimeout(Math.min(10000, timeout));connection.setReadTimeout(timeout);connection.setRequestMethod(method);
                 JSObject headers=call.getObject("headers",new JSObject());

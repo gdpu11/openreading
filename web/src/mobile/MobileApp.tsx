@@ -1,3 +1,4 @@
+import { AppUpdate } from "./AppUpdate";
 import { ComputerLibrary } from "./ComputerLibrary";
 import { SettingsMenu, settingsTitle, type SettingsPage } from "./SettingsMenu";
 import { ReadingDisplay, readingDisplayAvailable } from "./readingDisplay";
@@ -1152,6 +1153,7 @@ export function MobileApp() {
       ) : (
         <main className={"mobile-settings" + (settingsPage === "home" ? " mobile-settings-home" : " mobile-settings-subpage")} data-settings-page={settingsPage}>
           {settingsPage === "home" && <SettingsMenu paired={!!c?.deviceId} count={documents.length} pending={state.current.outbox.length} open={setSettingsPage} onStats={() => setStatsMode(true)} onLibrary={()=>setView("library")}/>}
+          {settingsPage === "update" && <AppUpdate connection={c} onPair={()=>setSettingsPage("sync")}/>}
           {settingsPage === "catalog" && c?.deviceId && <ComputerLibrary connection={c} downloaded={new Set(documents.map((d:any)=>d.id))} onReceive={()=>sync()} receiving={syncInProgress} progress={status} syncError={syncError} onLibrary={()=>{setView("library");setSettingsPage("home");}}/>}
           {settingsPage === "sync" && <>
           <section className="mobile-settings-group mobile-sync-card">

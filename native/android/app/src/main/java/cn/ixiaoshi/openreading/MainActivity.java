@@ -7,6 +7,8 @@ public class MainActivity extends BridgeActivity {
   registerPlugin(LocalSyncPlugin.class);
   registerPlugin(OfflineFilesPlugin.class);
   registerPlugin(ReadingDisplayPlugin.class);
+  registerPlugin(ReadingSpeechPlugin.class);
+  registerPlugin(AppUpdatePlugin.class);
   super.onCreate(savedInstanceState);
  }
 }

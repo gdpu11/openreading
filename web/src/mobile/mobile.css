@@ -1348,3 +1348,8 @@ body:has(.mobile-app) {
 .mobile-settings-subpage .mobile-pair > h1 {font-size:23px;margin:14px 0;font-weight:600;}
 .mobile-settings-subpage .mobile-pair > p {font-size:12px;line-height:1.9;}
 .mobile-settings-subpage .mobile-pair > button.primary {width:100%;}
+
+.mobile-update-page > svg {color:var(--accent);margin-top:12px;}
+.mobile-update-release {border-top:1px solid var(--line);margin-top:20px;padding-top:20px;}
+.mobile-update-release progress {width:100%;accent-color:var(--accent);}
+.mobile-update-error {color:var(--danger);overflow-wrap:anywhere;}

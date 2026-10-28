@@ -1,4 +1,5 @@
 import {
+  ArrowUpCircle,
   BookOpen,
   ChevronRight,
   Info,
@@ -9,7 +10,7 @@ import {
 } from "lucide-react";
 import { tr } from "../i18n";
 export type SettingsPage =
-  "home" | "sync" | "catalog" | "appearance" | "import" | "about";
+  "home" | "sync" | "catalog" | "appearance" | "import" | "about" | "update";
 export const settingsTitle = (page: SettingsPage) =>
   ({
     home: "设置",
@@ -18,6 +19,7 @@ export const settingsTitle = (page: SettingsPage) =>
     appearance: "通用设置",
     import: "导入与分享",
     about: "关于 Open Reading",
+    update: "检查更新",
   })[page];
 export function SettingsMenu({
   paired,
@@ -65,7 +67,12 @@ export function SettingsMenu({
           open("sync"),
         )}
         {row(BookOpen, "阅读数据", "阅读时间与日历", onStats)}
-        {row(NotebookPen, "本机阅读资料", `${count} ${tr("本已下载")}`, onLibrary)}
+        {row(
+          NotebookPen,
+          "本机阅读资料",
+          `${count} ${tr("本已下载")}`,
+          onLibrary,
+        )}
       </section>
       <section className="mobile-menu-group" aria-label={tr("工具与偏好")}>
         {row(
@@ -77,6 +84,7 @@ export function SettingsMenu({
         {row(Moon, "通用设置", "外观与语言", () => open("appearance"))}
       </section>
       <section className="mobile-menu-group">
+        {row(ArrowUpCircle, "检查更新", "手机应用升级", () => open("update"))}
         {row(Info, "关于 Open Reading", "", () => open("about"))}
       </section>
     </div>

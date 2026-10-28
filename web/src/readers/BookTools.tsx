@@ -1,3 +1,4 @@
+import { NativeBookSpeech, nativeSpeechAvailable } from "./nativeSpeech";
 import { isEpubFormat } from "../formats";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MobileSheet } from "../mobile/MobileSheet";
@@ -83,7 +84,8 @@ export function BookTools({
   const controller = useRef<AbortController | null>(null),
     searchRun = useRef(0),
     currentBook = useRef(doc.version.id),
-    speechRun = useRef(0);
+    speechRun = useRef(0),
+    nativeSpeech = useRef<NativeBookSpeech | null>(null);
   currentBook.current = doc.version.id;
   useEffect(() => {
     window.speechSynthesis?.getVoices();
@@ -99,6 +101,7 @@ export function BookTools({
     return () => {
       controller.current?.abort();
       speechRun.current++;
+      nativeSpeech.current?.stop();
       window.speechSynthesis?.cancel();
     };
   }, [doc.workspaceDocumentId, doc.version.id, encoding]);
@@ -151,18 +154,29 @@ export function BookTools({
     );
   };
   const readAloud = () => {
-    if (!window.speechSynthesis) {
+    if (!nativeSpeechAvailable() && !window.speechSynthesis) {
       setError(tr("此设备不支持朗读"));
       return;
     }
     const run = ++speechRun.current;
-    window.speechSynthesis.cancel();
+    nativeSpeech.current?.stop();
+    window.speechSynthesis?.cancel();
     const text = reader.current?.sectionText() || ocr;
     if (!text.trim()) {
       setError(tr("此页没有文字，请先使用 OCR"));
       return;
     }
     const language = /[\u3400-\u9fff]/.test(text) ? "zh-CN" : "en-US";
+    if (nativeSpeechAvailable()) {
+      const sentences = text.match(/[\s\S]{1,220}[。！？.!?\n]|[\s\S]{1,220}/g) || [];
+      setError("");
+      setSpeaking(true);
+      nativeSpeech.current = new NativeBookSpeech(sentences, language, rate,
+        () => {if (run === speechRun.current) setSpeaking(false);},
+        (e) => {if (run === speechRun.current) {setSpeaking(false);setError(e.message);}});
+      void nativeSpeech.current.resume();
+      return;
+    }
     const voice = localReadingVoice(
       window.speechSynthesis.getVoices(),
       language,
@@ -501,15 +515,16 @@ export function BookTools({
               <button className="primary" onClick={readAloud}>
                 {tr(speaking ? "重新朗读" : "开始朗读")}
               </button>
-              <button onClick={() => window.speechSynthesis?.pause()}>
+              <button onClick={() => nativeSpeechAvailable() ? nativeSpeech.current?.pause() : window.speechSynthesis?.pause()}>
                 {tr("暂停")}
               </button>
-              <button onClick={() => window.speechSynthesis?.resume()}>
+              <button onClick={() => nativeSpeechAvailable() ? void nativeSpeech.current?.resume() : window.speechSynthesis?.resume()}>
                 {tr("继续")}
               </button>
               <button
                 onClick={() => {
                   speechRun.current++;
+                  nativeSpeech.current?.stop();
                   window.speechSynthesis?.cancel();
                   setSpeaking(false);
                 }}
