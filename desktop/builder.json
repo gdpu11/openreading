@@ -8,6 +8,7 @@
     "desktop/main.cjs",
     "desktop/preload.cjs",
     "desktop/reading-tools.cjs",
+    "desktop/open-files.cjs",
     "package.json"
   ],
   "extraResources": [
@@ -34,7 +35,17 @@
     "identity": null,
     "icon": "desktop/assets/icon.icns",
     "extendInfo": {
-      "NSLocalNetworkUsageDescription": "手机在同一局域网连接这台电脑，同步阅读文件和学习笔记。"
+      "NSLocalNetworkUsageDescription": "手机在同一局域网连接这台电脑，同步阅读文件和学习笔记。",
+      "CFBundleDocumentTypes": [
+        {
+          "CFBundleTypeName": "EPUB e-book",
+          "CFBundleTypeExtensions": ["epub"],
+          "CFBundleTypeRole": "Viewer",
+          "LSHandlerRank": "Alternate",
+          "LSItemContentTypes": ["org.idpf.epub-container"],
+          "CFBundleTypeIconFile": "icon.icns"
+        }
+      ]
     },
     "artifactName": "Open-Reading-${version}-macOS-${arch}.${ext}"
   },

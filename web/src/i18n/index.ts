@@ -22,6 +22,7 @@ declare global {
       ) => Promise<{ saved: boolean }>;
       credential: (action: "load" | "save" | "forget", request: {id:string;target:string;key?:string}) => Promise<string | boolean | null>;
       recognizePage: (image: string) => Promise<string>;
+      recognizePageDetailed?: (image: string) => Promise<import("../conversion/pdfIllustrations").DetailedOCR>;
       showLibrary: () => void;
       onThread: (navigate: (id: string) => void) => () => void;
       onClosing: (flush: () => Promise<void>) => () => void;

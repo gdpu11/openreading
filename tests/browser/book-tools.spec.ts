@@ -383,6 +383,7 @@ test("Native book conversion, original deletion, format filtering and reading es
     await expect(card("双栏与扫描混合.epub")).toHaveCount(0);
     // Image mode includes every original page and still supports book progress.
     await context("双栏与扫描混合.pdf", "转换为 EPUB");
+    await library.getByLabel("转换方式", { exact: true }).selectOption("images");
     await library
       .getByRole("button", { name: "开始转换", exact: true })
       .click();

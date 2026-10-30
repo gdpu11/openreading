@@ -19,6 +19,7 @@ const {
   mkdirSync,
 } = require("node:fs");
 const CLOUD = process.env.OPENREADING_CLOUD_URL || "";
+const { isBookFile, openLocalBook } = require("./open-files.cjs");
 let win,
   service,
   stopping = false,
@@ -28,6 +29,85 @@ const managedWindows = new Set();
 const closeWaiters = new Map();
 let libraryURL;
 let pendingReadingLink;
+const pendingFiles = new Set();
+let importingFiles = false;
+function enqueueFiles(paths) {
+  for (const path of paths) if (isBookFile(path)) pendingFiles.add(path);
+  void openPendingFiles();
+}
+async function openPendingFiles() {
+  if (
+    !libraryURL ||
+    opening ||
+    quitting ||
+    importingFiles ||
+    !pendingFiles.size
+  )
+    return;
+  importingFiles = true;
+  try {
+    if (settings.mode !== "local") await open("local");
+    if (settings.mode !== "local" || !service) throw Error("本机书库不可用");
+    const base = libraryURL;
+    const cookies = await session.defaultSession.cookies.get({ url: base });
+    const cookie = cookies
+      .filter((c) => c.name === "openreading_session")
+      .map((c) => c.name + "=" + c.value)
+      .join("; ");
+    let csrf = "";
+    const request = async (path, method = "GET", body) => {
+      const response = await fetch(base + "/api" + path, {
+        method,
+        headers: {
+          Cookie: cookie,
+          Origin: base,
+          "X-CSRF-Token": csrf,
+          ...(body instanceof FormData
+            ? {}
+            : { "Content-Type": "application/json" }),
+        },
+        body:
+          body === undefined
+            ? undefined
+            : body instanceof FormData
+              ? body
+              : JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message || "无法打开文件");
+      return result;
+    };
+    csrf = (await request("/me")).csrf;
+    for (const path of pendingFiles) {
+      try {
+        const target = await openLocalBook(path, request, settings.language);
+        if (target.createdWorkspace && win && !win.isDestroyed()) win.reload();
+        await openBookTarget(target);
+      } catch (error) {
+        await dialog.showMessageBox({
+          type: "error",
+          title: "Open Reading",
+          message:
+            settings.language === "zh"
+              ? "无法打开 EPUB"
+              : "Unable to open EPUB",
+          detail: error.message,
+        });
+      } finally {
+        pendingFiles.delete(path);
+      }
+    }
+  } catch (error) {
+    pendingFiles.clear();
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Open Reading",
+      message: error.message,
+    });
+  } finally {
+    importingFiles = false;
+  }
+}
 function parseReadingLink(value) {
   try {
     const u = new URL(value);
@@ -68,6 +148,10 @@ async function followReadingLink(value) {
 app.on("open-url", (event, value) => {
   event.preventDefault();
   void followReadingLink(value).catch(() => showLibrary());
+});
+app.on("open-file", (event, path) => {
+  event.preventDefault();
+  enqueueFiles([path]);
 });
 let quitting = false;
 let stopPromise = Promise.resolve();
@@ -240,6 +324,7 @@ async function open(mode) {
     });
   } finally {
     opening = false;
+    void openPendingFiles();
   }
 }
 async function zoomReading(action, target = BrowserWindow.getFocusedWindow()) {
@@ -590,6 +675,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", (_, argv) => {
     const value = argv.find((v) => v.startsWith("openreading://"));
     if (value) void followReadingLink(value).catch(() => showLibrary());
+    else if (argv.some(isBookFile)) enqueueFiles(argv);
     else showLibrary();
   });
   app.on("activate", () => {
@@ -645,7 +731,7 @@ if (!app.requestSingleInstanceLock()) {
         return keys(action, request);
       },
     );
-    ipcMain.handle("open-reading:ocr", async (event, image) => {
+    const recognize = async (event, image, detailed = false) => {
       if (!trusted(event)) throw Error("Untrusted reader");
       return tools.recognizePage(
         image,
@@ -653,8 +739,15 @@ if (!app.requestSingleInstanceLock()) {
         app.isPackaged
           ? join(process.resourcesPath, "runtime")
           : join(__dirname, "runtime"),
+        detailed,
       );
-    });
+    };
+    ipcMain.handle("open-reading:ocr", (event, image) =>
+      recognize(event, image),
+    );
+    ipcMain.handle("open-reading:ocr-detailed", (event, image) =>
+      recognize(event, image, true),
+    );
     ipcMain.on("open-reading:closed-ready", (event) => {
       if (trusted(event)) closeWaiters.get(event.sender.id)?.();
     });
@@ -810,6 +903,7 @@ if (!app.requestSingleInstanceLock()) {
       configureMenu();
     });
     configureMenu();
+    for (const path of process.argv.filter(isBookFile)) pendingFiles.add(path);
     await open(settings.mode === "cloud" ? "cloud" : "local");
     if (app.isPackaged) app.setAsDefaultProtocolClient("openreading");
     const readingLink =

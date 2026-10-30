@@ -1218,5 +1218,11 @@
   "配对不会自动下载。手机可搜索获授权工作区的书籍并选择同步；也可在电脑书库选择单本、文件夹或整个工作区。": "Pairing does not download books. Browse authorized workspaces on your phone and choose books, or select books, folders or workspaces on the computer.",
   "电脑就是书库服务器。手机与电脑连接同一 Wi-Fi 或局域网，扫码后可在手机选书，也可由电脑选择后同步，无需云端账号或自建服务器。": "Your computer serves the library. Connect on the same local network and choose books on either device. No cloud account or separate server needed.",
   "已配对。可以在手机搜索选书，或返回电脑书库选择同步范围。": "Paired. Choose books on the phone or select a sync scope on the computer.",
-  "搜索电脑书库，勾选想读的书，再同步到手机。电脑端的单本、文件夹和工作区同步也会保留。": "Search your computer library and sync selected books. Existing computer selections and folder/workspace rules are kept."
+  "搜索电脑书库，勾选想读的书，再同步到手机。电脑端的单本、文件夹和工作区同步也会保留。": "Search your computer library and sync selected books. Existing computer selections and folder/workspace rules are kept.",
+  "扫描页文字识别需要桌面端，请使用带本地 OCR 的客户端。": "Scanned-page recognition requires the desktop app with local OCR.",
+  "正在识别第 {0} / {1} 页…": "Recognizing page {0} / {1}…",
+  "自动识别文字与插图（推荐）": "Recognize text and illustrations automatically (Recommended)",
+  "在本机高分辨率识别，自动复识别疑点；正文可调字号和重排，插图按位置提取，不附整页扫描图。复杂排版和模糊内容可能无法完整还原。": "Recognize text and illustrations automatically with high-resolution local OCR and regional retries. Reflowable text and extracted figures follow the page order, without full-page scans. Complex or blurry content may not be fully recovered.",
+  "无法分析书页插图": "Unable to analyze page illustrations",
+  "无法提取书页插图": "Unable to extract page illustrations"
 }

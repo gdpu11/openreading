@@ -38,7 +38,7 @@ AI is optional and requires your own configured model service; provider charges 
 
 ![Highlights and notes beside the original text](docs/images/reading-notes.png)
 
-To convert a book, right-click it in the library and choose **Convert to EPUB** or **Convert to PDF**. PDF → EPUB offers page-image and text-reflow modes; EPUB → PDF requires the desktop app. Conversion runs locally. Complex layouts may change, and scanned PDF pages are not OCRed.
+To convert a book, right-click it in the library and choose **Convert to EPUB** or **Convert to PDF**. Desktop PDF → EPUB defaults to automatic text and illustration recognition: high-resolution local OCR reflows body text and attempts to crop illustrations into separate images in reading order. On macOS, it compares two passes and retries uncertain regions. It does not attach full-page scans or require manual confirmation. Page-image and existing-text-layer modes remain available. It uses macOS Vision or installed Tesseract with the relevant language data. Blurry characters, tables, columns and small figures may not be fully recovered; automatic recognition is not human proofreading. Engine errors stop conversion. EPUB → PDF requires the desktop app. All conversion runs locally.
 
 ## Platform status
 

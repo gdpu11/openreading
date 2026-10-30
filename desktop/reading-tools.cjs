@@ -59,11 +59,52 @@ function credentialStore(directory, safeStorage) {
     return task;
   };
 }
-async function recognizePage(image, tempRoot, runtime) {
+function parseTesseractTsv(tsv) {
+  const groups = new Map();
+  const rows = tsv
+    .trim()
+    .split(/\r?\n/)
+    .slice(1)
+    .map((row) => row.split("\t"));
+  const page = rows.find((row) => row[0] === "1");
+  const width = Number(page?.[8]) || 1,
+    height = Number(page?.[9]) || 1;
+  for (const row of rows) {
+    if (row[0] !== "5" || !row[11]?.trim()) continue;
+    const key = row.slice(1, 5).join(":"),
+      text = row.slice(11).join("\t");
+    const confidence = Math.max(0, Math.min(1, (Number(row[10]) || 0) / 100));
+    const box = {
+      x: Number(row[6]) / width,
+      y: 1 - (Number(row[7]) + Number(row[9])) / height,
+      width: Number(row[8]) / width,
+      height: Number(row[9]) / height,
+    };
+    const previous = groups.get(key);
+    if (previous) {
+      previous.text += " " + text;
+      previous.confidence = Math.min(previous.confidence, confidence);
+      const right = Math.max(
+          previous.box.x + previous.box.width,
+          box.x + box.width,
+        ),
+        top = Math.max(
+          previous.box.y + previous.box.height,
+          box.y + box.height,
+        );
+      previous.box.x = Math.min(previous.box.x, box.x);
+      previous.box.y = Math.min(previous.box.y, box.y);
+      previous.box.width = right - previous.box.x;
+      previous.box.height = top - previous.box.y;
+    } else groups.set(key, { text, confidence, box, alternatives: [] });
+  }
+  return [...groups.values()];
+}
+async function recognizePage(image, tempRoot, runtime, detailed = false) {
   if (
     typeof image !== "string" ||
     !image.startsWith("data:image/png;base64,") ||
-    image.length > 16 * 1024 * 1024
+    image.length > 32 * 1024 * 1024
   )
     throw Error("Invalid page image");
   const bytes = Buffer.from(image.slice(22), "base64");
@@ -80,10 +121,14 @@ async function recognizePage(image, tempRoot, runtime) {
       const helper = join(runtime, "openreading-ocr");
       try {
         await fs.access(helper);
-        result = await execFile(helper, [file], {
-          timeout: 60000,
-          maxBuffer: 2 * 1024 * 1024,
-        });
+        result = await execFile(
+          helper,
+          [file, ...(detailed ? ["--details"] : [])],
+          {
+            timeout: detailed ? 120000 : 60000,
+            maxBuffer: 2 * 1024 * 1024,
+          },
+        );
       } catch (e) {
         if (e.code !== "ENOENT") throw e;
       }
@@ -98,9 +143,45 @@ async function recognizePage(image, tempRoot, runtime) {
       if (!languages.length) throw Error("请为 Tesseract 安装中文或英文语言包");
       result = await execFile(
         "tesseract",
-        [file, "stdout", "-l", languages.join("+")],
+        [
+          file,
+          "stdout",
+          "-l",
+          languages.join("+"),
+          ...(detailed ? ["tsv"] : []),
+        ],
         { timeout: 60000, maxBuffer: 2 * 1024 * 1024 },
       );
+      if (detailed) {
+        const second = await execFile(
+          "tesseract",
+          [file, "stdout", "-l", languages.join("+"), "--psm", "6"],
+          { timeout: 60000, maxBuffer: 2 * 1024 * 1024 },
+        );
+        return {
+          engine: "tesseract",
+          lines: parseTesseractTsv(result.stdout),
+          secondaryText: second.stdout.trim(),
+        };
+      }
+    }
+    if (detailed) {
+      const value = JSON.parse(result.stdout);
+      if (
+        !Array.isArray(value.lines) ||
+        value.lines.length > 10000 ||
+        typeof value.secondaryText !== "string" ||
+        !value.lines.every(
+          (line) =>
+            typeof line.text === "string" &&
+            Number.isFinite(line.confidence) &&
+            line.confidence >= 0 &&
+            line.confidence <= 1 &&
+            Array.isArray(line.alternatives),
+        )
+      )
+        throw Error("本机 OCR 返回了无效的校对信息，请更新客户端后重试");
+      return value;
     }
     return result.stdout.trim();
   } catch (e) {
@@ -113,4 +194,4 @@ async function recognizePage(image, tempRoot, runtime) {
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
-module.exports = { credentialStore, recognizePage };
+module.exports = { credentialStore, recognizePage, parseTesseractTsv };

@@ -737,7 +737,7 @@ function App() {
   useEffect(() => {
     if (!desktopLibrary || !workspace) return;
     const refresh = () => {
-      void loadDocuments().catch(fail);
+      void Promise.all([loadDocuments(), loadSources()]).catch(fail);
     };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);

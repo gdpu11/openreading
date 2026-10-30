@@ -13,3 +13,15 @@ test("protected model keys bind to provider target, serialize writes and reject 
   await assert.rejects(credentialStore(dir,{...safe,getSelectedStorageBackend:()=>"basic_text"})("save",a));
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+const {parseTesseractTsv,recognizePage}=require('./reading-tools.cjs');
+test('OCR details retain line ordering, conservative confidence and normalized bounds',()=>{
+ const header='level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
+ const rows=['1\t1\t0\t0\t0\t0\t0\t0\t1000\t2000\t-1\t','5\t1\t1\t1\t1\t1\t100\t200\t100\t40\t98\tHello','5\t1\t1\t1\t1\t2\t220\t200\t100\t40\t70\tworld','5\t1\t1\t1\t2\t1\t100\t300\t100\t40\t95\tNext'];
+ const lines=parseTesseractTsv([header,...rows].join('\n'));
+ assert.equal(lines.length,2);assert.equal(lines[0].text,'Hello world');assert.equal(lines[0].confidence,.7);
+ assert.equal(lines[0].box.x,.1);assert.equal(lines[0].box.width,.22);assert.equal(lines[1].text,'Next');
+});
+test('OCR rejects non-PNG and oversized input before invoking local tools',async()=>{
+ for(const image of ['not an image','data:image/png;base64,ZmFrZQ==','data:image/png;base64,'+'A'.repeat(32*1024*1024)])
+  await assert.rejects(recognizePage(image,'/private/tmp','/private/tmp',true));
+});

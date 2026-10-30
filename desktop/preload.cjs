@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("openReadingDesktop", {
   credential: (action, request) =>
     ipcRenderer.invoke("open-reading:credential", action, request),
   recognizePage: (image) => ipcRenderer.invoke("open-reading:ocr", image),
+  recognizePageDetailed: (image) =>
+    ipcRenderer.invoke("open-reading:ocr-detailed", image),
   showLibrary: () => ipcRenderer.send("open-reading:library"),
   onThread: (navigate) => {
     const listener = (_, id) => navigate(id);

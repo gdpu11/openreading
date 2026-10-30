@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Arch } from "electron-builder";
@@ -9,6 +9,18 @@ import verifyDesktop, {
   binaryTarget,
   verifyBinary,
 } from "./verify-desktop.mjs";
+
+test("macOS registers EPUB as a readable document and bundles its opening handler", async () => {
+  const config = JSON.parse(
+    await readFile(new URL("../desktop/builder.json", import.meta.url), "utf8"),
+  );
+  const epub = config.mac.extendInfo.CFBundleDocumentTypes.find((type) =>
+    type.LSItemContentTypes.includes("org.idpf.epub-container"),
+  );
+  assert.equal(epub.CFBundleTypeRole, "Viewer");
+  assert.ok(epub.CFBundleTypeExtensions.includes("epub"));
+  assert.ok(config.files.includes("desktop/open-files.cjs"));
+});
 
 test("Intel Mac and Windows build matching Go and Electron architectures on an ARM host", () => {
   const mac = desktopTarget(["--mac", "--x64", "--dir"], "darwin", "arm64");
