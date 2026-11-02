@@ -917,6 +917,8 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       getOutline: () => outlineRef.current,
       captureSelection: makeSelection,
       clearNativeSelection() {
+        // The same text may be reselected before the next native-selection poll.
+        selectionRequest.current++;
         root()?.ownerDocument.defaultView?.getSelection()?.removeAllRanges();
         window.getSelection()?.removeAllRanges();
       },
@@ -1353,7 +1355,8 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             // iframe. Observe its same-origin Selection from the parent; never
             // weaken the EPUB sandbox. Publish only a stable, changed CFI.
             let candidate = "",
-              published = "";
+              published = "",
+              publishedRequest = 0;
             selectionPoll = setInterval(() => {
               // Mobile selection actions and its editor take focus out of the
               // iframe. Preserve the captured excerpt until they are dismissed.
@@ -1368,7 +1371,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               }
               const range = selection.getRangeAt(0);
               const cfi = c.cfiFromRange(range);
-              if (cfi === published) {
+              if (
+                cfi === published &&
+                publishedRequest === selectionRequest.current
+              ) {
                 capturedRange.current = range.cloneRange();
                 refreshSelectionPosition();
                 return;
@@ -1379,6 +1385,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               }
               published = cfi;
               publishSelection(range.cloneRange(), c.document.body);
+              publishedRequest = selectionRequest.current;
             }, 150);
             if (savedCFI && p.epubFlow !== "paginated") {
               const c = r.getContents()[0];
@@ -1881,7 +1888,11 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
                 onPosition={(index, offset) => {
                   pdfCurrentPage.current = index;
                   setPage(index);
-                  setPageText(pdfPages.current?.get(index)?.hasText ?? true);
+                  // Zoom and resize temporarily replace page views. Keep the
+                  // last text result until a new view is ready; changing the
+                  // scan hint here would resize the footer and refit forever.
+                  const view = pdfPages.current?.get(index);
+                  if (view) setPageText(view.hasText);
                   publishPosition(
                     { pageIndex: index, pageOffset: offset },
                     (index + 1) / pages,
@@ -1889,10 +1900,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
                 }}
                 onReady={() => {
                   refreshSelectionPosition();
-                  setPageText(
-                    pdfPages.current?.get(pdfCurrentPage.current)?.hasText ??
-                      true,
+                  const view = pdfPages.current?.get(
+                    pdfCurrentPage.current,
                   );
+                  if (view) setPageText(view.hasText);
                   void paint();
                   if (doc.initialAnchor && !initialPdfNavigation.current) {
                     const selector = doc.initialAnchor.selectors.find(
@@ -1914,21 +1925,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           </>
         )}
         {doc.format === "epub" && (
-          <>
-            <div className="page-tools" data-no-text>
-              <button disabled={loading} onClick={() => turnPage(-1)}>
-                {tr(p.epubFlow === "paginated" ? "上一页" : "上一节")}
-              </button>
-              <button disabled={loading} onClick={() => turnPage(1)}>
-                {tr(p.epubFlow === "paginated" ? "下一页" : "下一节")}
-              </button>
-              <small>{tr("单章选区 · EPUB CFI 定位")}</small>
-            </div>
-            <div
-              className="epub-container"
-              style={{ minHeight: p.epubFlow === "paginated" ? 0 : 500 }}
-            />
-          </>
+          <div
+            className="epub-container"
+            style={{ minHeight: p.epubFlow === "paginated" ? 0 : 500 }}
+          />
         )}
         {doc.format === "markdown" && (
           <article className="prose">

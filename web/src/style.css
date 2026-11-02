@@ -650,6 +650,10 @@ small {
   background: var(--accent);
 }
 .reader-progress output {
+  /* Keep the track steady while the preview changes from 0% to 99.9%. */
+  min-width: 6ch;
+  flex-shrink: 0;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

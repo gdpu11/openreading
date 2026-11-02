@@ -352,7 +352,7 @@ test("Actual legacy EPUB restores navigation, live page turns, seek and saved pr
   await expect(body()).toContainText("从优秀到卓越");
   const slider = page.getByRole("slider", { name: "整本阅读进度" });
   await expect(slider).toBeEnabled();
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () =>
       parseFloat((await page.getByLabel("阅读进度百分比").textContent())!),
@@ -838,6 +838,12 @@ test("Concurrent reader windows preserve each other's offline reading receipts",
   await page.clock.install();
   await page.bringToFront();
   await openFile(page, "中文与Unicode.txt");
+  // Exercise receipt isolation with the desktop host's foreground signal;
+  // other headless pages must not steal focus during the virtual-time run.
+  await page.evaluate(() => {
+    document.documentElement.dataset.readingSystemActive = "true";
+    window.dispatchEvent(new Event("openreading-system-state"));
+  });
   await expect(page.locator(".session-timer")).toHaveAttribute(
     "data-state",
     "running",
@@ -855,6 +861,10 @@ test("Concurrent reader windows preserve each other's offline reading receipts",
   await second.clock.install();
   await second.bringToFront();
   await openFile(second, "幂等性.md");
+  await second.evaluate(() => {
+    document.documentElement.dataset.readingSystemActive = "true";
+    window.dispatchEvent(new Event("openreading-system-state"));
+  });
   await expect(second.locator(".session-timer")).toHaveAttribute(
     "data-state",
     "running",
@@ -1188,7 +1198,7 @@ test("Fullscreen reading retains the reader and whole-book progress persists", a
       (await page.getByLabel("阅读进度百分比").textContent())!.replace("%", ""),
     );
   await expect(page.getByLabel("阅读进度百分比")).toHaveText(/^[\d.]+%$/);
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect.poll(value).toBeGreaterThan(0);
   expect((await page.locator(".document-progress").boundingBox())!.y).toBe(
     headerProgressTop,
@@ -1259,7 +1269,7 @@ test("Fullscreen reading retains the reader and whole-book progress persists", a
   await expect(page.getByTitle("收起文件栏", { exact: true })).toBeVisible();
   for (let i = 0; i < 20 && (await value()) < 100; i++) {
     const old = await value();
-    await page.getByRole("button", { name: "下一页", exact: true }).click();
+    await page.keyboard.press("ArrowRight");
     await expect.poll(value).toBeGreaterThan(old);
   }
   await expect(page.getByLabel("阅读进度百分比")).toHaveText("100%");
@@ -1358,7 +1368,7 @@ test("EPUB page numbers follow page turns, window size, font size and scrolling"
   const numbers = async () =>
     (await counter.textContent())!.match(/\d+/g)!.map(Number);
   const initial = await numbers();
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () => (await numbers())[0])
     .toBeGreaterThan(initial[0]);
@@ -1455,6 +1465,9 @@ for (const [file, layout] of [
     await page.mouse.move(x(65), box.y + box.height / 2, { steps: 8 });
     await expect.poll(percentage).toBeGreaterThan(63);
     await expect.poll(percentage).toBeLessThan(67);
+    const previewBox = (await slider.boundingBox())!;
+    expect(Math.abs(previewBox.x - box.x)).toBeLessThan(0.5);
+    expect(Math.abs(previewBox.width - box.width)).toBeLessThan(0.5);
     expect(await readerPosition()).toBe(before);
     await page.mouse.up();
     await expect(slider).toBeEnabled();
@@ -1542,6 +1555,11 @@ for (const [file, layout] of [
 test("PDF zoom shortcuts support Mac and Windows modifiers, preserve the reading point and persist", async ({
   page,
 }) => {
+  const member = docs.find((d: any) =>
+    d.bindings.some((b: any) => b.relativePath.endsWith("500页按需加载.pdf")),
+  );
+  const preferencesPath = `/documents/${member.id}/preferences`;
+  const globalScale = (await get("/preferences")).pdfScale;
   await openFile(page, "500页按需加载.pdf");
   const zoom = page.getByLabel("PDF 缩放");
   await page.getByLabel("页面布局").selectOption("single");
@@ -1590,8 +1608,10 @@ test("PDF zoom shortcuts support Mac and Windows modifiers, preserve the reading
   await page.screenshot({ path: path.join(evidence, "pdf-zoom-focused.png") });
   const scale = await zoom.inputValue();
   await expect
-    .poll(async () => (await get("/preferences")).pdfScale)
+    .poll(async () => (await get(preferencesPath)).data.pdfScale)
     .toBe(Number(scale));
+  expect((await get("/preferences")).pdfScale).toBe(globalScale);
+  expect((await get(preferencesPath)).data.pdfSpread).toBe(false);
   await page.reload();
   await expect(zoom).toHaveValue(scale);
   await page.keyboard.press("Control+0");
@@ -1607,7 +1627,7 @@ test("PDF zoom shortcuts support Mac and Windows modifiers, preserve the reading
   // The earlier gesture's idle save must not override a direct menu choice.
   await page.waitForTimeout(220);
   await expect
-    .poll(async () => (await get("/preferences")).pdfScale)
+    .poll(async () => (await get(preferencesPath)).data.pdfScale)
     .toBe(0.75);
   await page.keyboard.press("Control+0");
   await expect(zoom).toHaveValue("1");
@@ -1630,6 +1650,10 @@ test("PDF pinch input scales only the document, clamps limits and coalesces pref
   page,
   browserName,
 }) => {
+  const member = docs.find((d: any) =>
+    d.bindings.some((b: any) => b.relativePath.endsWith("双栏与扫描混合.pdf")),
+  );
+  const preferencesPath = `/documents/${member.id}/preferences`;
   await openFile(page, "双栏与扫描混合.pdf");
   await page.getByLabel("页面布局").selectOption("single");
   const zoom = page.getByLabel("PDF 缩放");
@@ -1640,7 +1664,7 @@ test("PDF pinch input scales only the document, clamps limits and coalesces pref
   page.on("request", (request) => {
     if (
       request.method() === "PUT" &&
-      request.url().endsWith("/api/preferences")
+      request.url().endsWith(`/api${preferencesPath}`)
     )
       saved.push(request.postDataJSON());
   });
@@ -1664,7 +1688,7 @@ test("PDF pinch input scales only the document, clamps limits and coalesces pref
     .poll(async () => Number(await zoom.inputValue()))
     .toBeGreaterThan(1.2);
   await expect
-    .poll(async () => (await get("/preferences")).pdfScale)
+    .poll(async () => (await get(preferencesPath)).data.pdfScale)
     .toBe(Number(await zoom.inputValue()));
   expect(saved.length).toBeLessThanOrEqual(2);
   expect(saved.length).toBeGreaterThan(0);
@@ -2036,9 +2060,16 @@ test("A07 EPUB toolbar stays beside the actual selection after scrolling and res
     .poll(async () => (await toolbarGeometry(page)).gap)
     .toBeLessThan(16);
   await expect
-    .poll(async () => (await toolbarGeometry(page)).toolbar.y)
-    .toBeLessThan(before.toolbar.y - 40);
+    .poll(async () => (await toolbarGeometry(page)).selection.top)
+    .toBeLessThan(before.selection.top - 40);
   const afterScroll = await toolbarGeometry(page);
+  // Near the top edge the toolbar flips below the excerpt to stay visible.
+  expect(afterScroll.overlap).toBeGreaterThan(0);
+  const reader = (await page.locator(".reader-wrap").boundingBox())!;
+  expect(afterScroll.toolbar.y).toBeGreaterThanOrEqual(reader.y);
+  expect(afterScroll.toolbar.y + afterScroll.toolbar.height).toBeLessThanOrEqual(
+    reader.y + reader.height,
+  );
   await page.setViewportSize({ width: 1260, height: 900 });
   await selectText(paragraph, "幂等性意味着重复执行同一操作");
   await expect(page.locator(".selection-toolbar")).toBeVisible();
@@ -2064,6 +2095,7 @@ test("A07 EPUB toolbar stays beside the actual selection after scrolling and res
 test("EPUB selection toolbar closes with the native selection and can reopen", async ({
   page,
 }) => {
+  await page.clock.install();
   await openFile(page, "可靠接口.epub");
   const paragraph = page
     .frameLocator(".epub-container iframe")
@@ -2086,6 +2118,8 @@ test("EPUB selection toolbar closes with the native selection and can reopen", a
 
   await selectText(paragraph, quote);
   await expect(toolbar).toBeVisible();
+  // Reselect before the next native-selection poll observes the empty range.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await toolbar.getByTitle("取消选区", { exact: true }).click();
   await expect(toolbar).toHaveCount(0);
   await expect
@@ -2097,11 +2131,13 @@ test("EPUB selection toolbar closes with the native selection and can reopen", a
     .toBe("");
 
   await selectText(paragraph, quote);
+  await page.clock.runFor(450);
+  await expect(toolbar).toBeVisible();
   await toolbar.getByRole("button", { name: "问小阅", exact: true }).click();
   await expect(page.locator(".composer blockquote")).toContainText(quote);
   await expect(toolbar).toHaveCount(0);
   // The next selection poll must preserve the composer's captured quote.
-  await page.waitForTimeout(350);
+  await page.clock.runFor(350);
   await expect(page.locator(".composer blockquote")).toContainText(quote);
   await expect(page.getByLabel("评论输入")).toBeEnabled();
 });
@@ -2199,7 +2235,7 @@ test("A07 SVG EPUB cover preserves aspect ratio across sidebar and window change
     await assertProportions();
   }
   await page.screenshot({ path: path.join(evidence, "13-epub-cover.png") });
-  await page.getByRole("button", { name: "下一节", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect(
     page.frameLocator(".epub-container iframe").locator("p").first(),
   ).toContainText("幂等性意味着");
@@ -2240,7 +2276,7 @@ test("A07 actual local EPUB cover and chapter are readable without redistributin
     "xMidYMid meet",
   );
 
-  await page.getByRole("button", { name: "下一节", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () => (await frame.locator("body").innerText()).trim().length)
     .toBeGreaterThan(0);
@@ -2250,7 +2286,7 @@ test("A07 actual local EPUB cover and chapter are readable without redistributin
     i < 5 && (await frame.locator("body").innerText()).trim().length <= 40;
     i++
   ) {
-    await page.getByRole("button", { name: "下一节", exact: true }).click();
+    await page.keyboard.press("ArrowRight");
     await expect(frame.locator("body")).toBeAttached();
   }
   await expect
@@ -2391,7 +2427,7 @@ test("Arrow keys work inside the EPUB iframe in single and double page modes", a
   await page.getByLabel("页面布局").selectOption("single");
   await resetPage();
   const startCFI = (await state()).cfi;
-  await page.getByRole("button", { name: "下一页", exact: true }).focus();
+  await page.getByRole("button", { name: "全屏阅读", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
   await expect.poll(async () => (await state())?.cfi).not.toBe(startCFI);
   await page.keyboard.press("ArrowLeft");
@@ -2415,6 +2451,16 @@ test("Arrow keys work inside the EPUB iframe in single and double page modes", a
 test("EPUB window pagination reflows every viewport without vertical scrolling", async ({
   page,
 }) => {
+  const member = docs.find((d: any) =>
+    d.bindings.some((b: any) => b.relativePath.endsWith("双页阅读.epub")),
+  );
+  // This test exercises legacy global settings, without an earlier test's
+  // per-book layout taking precedence.
+  const reset = await client.put(
+    `${base}/api/documents/${member.id}/preferences`,
+    { headers: { "X-CSRF-Token": csrf }, data: {} },
+  );
+  expect(reset.ok()).toBe(true);
   const legacy = await client.put(`${base}/api/preferences`, {
     headers: { "X-CSRF-Token": csrf },
     data: { epubFlow: "scrolled-doc", epubSpread: false },
@@ -2541,7 +2587,7 @@ test("EPUB window pagination reflows every viewport without vertical scrolling",
   await body.click({ position: { x: 8, y: 8 } });
   await page.mouse.wheel(0, 600);
   expect((await geometry()).tops).toEqual([0, 0, 0, 0]);
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
   await expect.poll(async () => (await location())?.cfi).not.toBe(before);
   await assertFits();
   await page.getByTitle("展开讨论", { exact: true }).click();
@@ -2582,9 +2628,8 @@ test("EPUB window pagination reflows every viewport without vertical scrolling",
   await page.getByLabel("页面布局").selectOption("scroll");
   await page.reload();
   await expect(page.getByLabel("页面布局")).toHaveValue("scroll");
-  await expect(
-    page.getByRole("button", { name: "下一节", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".epub-container iframe")).toBeVisible();
+  await expect(page.locator(".reader-epub > .page-tools")).toHaveCount(0);
   await expect(page.locator(".reader-paginated")).toHaveCount(0);
 });
 
@@ -2678,6 +2723,38 @@ test("Two-page PDF fits both pages, preserves right-page annotations and falls b
   await page.getByLabel("页面布局").selectOption("single");
 });
 
+test("Scanned PDF spreads settle without repeatedly replacing visible canvases", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1680, height: 1000 });
+  await openFile(page, "双栏与扫描混合.pdf");
+  await page.getByLabel("页面布局").selectOption("double");
+  await page.getByLabel("PDF 页码").fill("2");
+  const notice = page.locator(".reading-footer .scan-notice");
+  await expect(notice).toBeVisible();
+  const sheet = page.locator('.pdf-page[data-page-index="1"]');
+  let canvas: any;
+  // Allow the initial fit to finish; a loaded scan must then remain painted,
+  // including across the reader's periodic timer and progress updates.
+  await expect(async () => {
+    canvas = await sheet.locator("canvas").elementHandle();
+    expect(canvas).not.toBeNull();
+    await page.waitForTimeout(400);
+    expect(await canvas.evaluate((el: HTMLElement) => el.isConnected)).toBe(true);
+    await expect(page.locator(".pdf-page-loading")).toHaveCount(0);
+  }).toPass({ timeout: 10000 });
+  await page.waitForTimeout(1600);
+  expect(await canvas.evaluate((el: HTMLElement) => el.isConnected)).toBe(true);
+  await expect(notice).toBeVisible();
+  await expect(page.getByLabel("PDF 页码")).toHaveValue("2");
+  await page.screenshot({ path: path.join(evidence, "scanned-pdf-stable.png") });
+  // The hint still follows actual page content after navigating away and back.
+  await page.getByLabel("PDF 页码").fill("1");
+  await expect(notice).toHaveCount(0);
+  await page.getByLabel("PDF 页码").fill("2");
+  await expect(notice).toBeVisible();
+});
+
 test("Two-page EPUB reflows live text, turns a spread and retains CFI notes and layout", async ({
   page,
 }) => {
@@ -2756,7 +2833,9 @@ test("Two-page EPUB reflows live text, turns a spread and retains CFI notes and 
     )
     .toContain("epubcfi(");
   const before = (await get(`/documents/${d.id}/reading-state`)).locator.cfi;
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
+  // Keyboard page turns require focus in the book, with no native selection.
+  await body.click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(
       async () => (await get(`/documents/${d.id}/reading-state`)).locator?.cfi,

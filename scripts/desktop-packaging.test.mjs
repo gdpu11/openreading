@@ -1,14 +1,44 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Arch } from "electron-builder";
+import { browserParsers } from "./browser-parsers.mjs";
 import { desktopTarget } from "./desktop-target.mjs";
 import verifyDesktop, {
   binaryTarget,
   verifyBinary,
 } from "./verify-desktop.mjs";
+
+test("browser parser adapters resolve native paths, including checkout paths with spaces", async () => {
+  const importer = "C:\\checkout\\node_modules\\mammoth\\lib\\xml\\reader.js";
+  assert.equal(
+    browserParsers().resolveId("./xmldom", importer),
+    fileURLToPath(new URL("../web/src/readers/docxXml.ts", import.meta.url)),
+  );
+  const dir = await realpath(
+    await mkdtemp(join(tmpdir(), "openreading parser paths-")),
+  );
+  try {
+    const script = join(dir, "scripts", "browser-parsers.mjs");
+    await mkdir(join(dir, "scripts"));
+    await writeFile(
+      script,
+      await readFile(new URL("./browser-parsers.mjs", import.meta.url)),
+    );
+    const { browserParsers: copiedParsers } = await import(
+      pathToFileURL(script).href
+    );
+    assert.equal(
+      copiedParsers().resolveId("./xmldom", importer),
+      join(dir, "web", "src", "readers", "docxXml.ts"),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("macOS registers EPUB as a readable document and bundles its opening handler", async () => {
   const config = JSON.parse(

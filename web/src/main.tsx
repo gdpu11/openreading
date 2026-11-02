@@ -540,10 +540,11 @@ function App() {
     if (doc && prefs.documentSort === "recent")
       void loadDocuments().catch(fail);
   }, [doc?.workspaceDocumentId]);
-  const updatePref = (patch: Partial<ReaderPreferences>) => {
+  const updatePref = (patch: Partial<ReaderPreferences>, persist = true) => {
     if (patch.language) setLanguage(patch.language);
     const next = { ...prefs, ...patch };
     setPrefs(next);
+    if (!persist) return;
     const readingKeys = [
       "fontSize",
       "lineHeight",
@@ -564,6 +565,7 @@ function App() {
         `/documents/${doc.workspaceDocumentId}/preferences`,
         "PUT",
         own,
+        { keepalive: true },
       ).catch(fail);
     } else void api("/preferences", "PUT", patch).catch(fail);
   };
@@ -2131,14 +2133,7 @@ function App() {
                     doc={doc}
                     preferences={prefs}
                     onPdfScaleChange={(scale, persist) => {
-                      setPrefs((current) => ({ ...current, pdfScale: scale }));
-                      if (persist)
-                        void api(
-                          "/preferences",
-                          "PUT",
-                          { pdfScale: scale },
-                          { keepalive: true },
-                        ).catch(fail);
+                      updatePref({ pdfScale: scale }, persist);
                     }}
                     progressContainer={progressContainer}
                     timerContainer={timerContainer}

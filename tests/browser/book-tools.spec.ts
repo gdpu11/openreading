@@ -408,7 +408,7 @@ test("Native book conversion, original deletion, format filtering and reading es
     await expect(
       book.getByRole("slider", { name: "整本阅读进度" }),
     ).toBeEnabled();
-    await book.getByRole("button", { name: "下一节", exact: true }).click();
+    await book.keyboard.press("ArrowRight");
     await expect
       .poll(async () =>
         parseFloat(await book.getByLabel("阅读进度百分比").textContent()),

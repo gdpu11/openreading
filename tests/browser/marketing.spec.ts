@@ -130,7 +130,7 @@ test("Capture demonstration-only launch screenshots", async () => {
       .click();
     const book = await opened;
     await expect(book.locator(".reader-status")).toHaveCount(0);
-    await book.getByRole("button", { name: "下一节", exact: true }).click();
+    await book.keyboard.press("ArrowRight");
     const body = book.frameLocator(".epub-container iframe").locator("body");
     await expect(body).toContainText("阅读不是收集更多文字");
     await body.evaluate((el: any) => {

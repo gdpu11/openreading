@@ -82,7 +82,7 @@ test("Electron legacy EPUB displays live progress and reopens at the saved posit
     ).toContainText("从优秀到卓越");
     let slider = book.getByRole("slider", { name: "整本阅读进度" });
     await expect(slider).toBeEnabled();
-    await book.getByRole("button", { name: "下一页", exact: true }).click();
+    await book.keyboard.press("ArrowRight");
     await expect
       .poll(async () =>
         parseFloat((await book.getByLabel("阅读进度百分比").textContent())!),

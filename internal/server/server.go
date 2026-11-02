@@ -126,7 +126,9 @@ func New(cfg Config) (*Server, error) {
 	if filepath.VolumeName(dbPath) != "" {
 		dbPath = "/" + dbPath
 	}
-	db, e := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: dbPath}).String()+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)")
+	// Reserve the writer before a transaction reads. Otherwise an autocommit
+	// from a background task can invalidate its WAL snapshot before the write.
+	db, e := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: dbPath}).String()+"?_txlock=immediate&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)")
 	if e != nil {
 		return nil, e
 	}

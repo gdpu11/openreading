@@ -1,4 +1,6 @@
 // Browser adapters for pinned parser dependencies. Keep the app's CSP intact.
+import { fileURLToPath } from "node:url";
+
 const namedFunction = `function createNamedFunction(name, body) {
   return Object.defineProperty(function() { return body.apply(this, arguments); },
     "name", { value: makeLegalFunctionName(name) });
@@ -31,7 +33,7 @@ export function browserParsers() {
     enforce: "pre",
     resolveId(source, importer) {
       if (source === "./xmldom" && importer?.replaceAll("\\", "/").endsWith("/mammoth/lib/xml/reader.js"))
-        return new URL("../web/src/readers/docxXml.ts", import.meta.url).pathname;
+        return fileURLToPath(new URL("../web/src/readers/docxXml.ts", import.meta.url));
     },
     transform(source, id) {
       if (!id.replaceAll("\\", "/").endsWith("/node-unrar-js/esm/js/unrar.js")) return;
