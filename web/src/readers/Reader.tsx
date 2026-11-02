@@ -408,6 +408,22 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       } else if (doc.format === "epub") {
         const r = rendition.current;
         if (!r || turningEpub.current === r) return;
+        if (latest.current.preferences.epubFlow !== "paginated") {
+          const stage = r.manager?.container as HTMLElement | undefined;
+          if (
+            stage &&
+            (direction > 0
+              ? stage.scrollTop + stage.clientHeight < stage.scrollHeight - 4
+              : stage.scrollTop > 4)
+          ) {
+            stage.scrollBy({
+              top: direction * stage.clientHeight * 0.9,
+              behavior: "instant",
+            });
+            schedulePosition();
+            return;
+          }
+        }
         turningEpub.current = r;
         void (direction < 0 ? r.prev() : r.next())
           .catch((e: any) => {
@@ -427,11 +443,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       !(doc.format === "pdf" && latest.current.preferences.pdfScale > 1);
     const touchTurn = (direction: -1 | 1) => {
       latest.current.onReaderTurn?.();
-      const el = host.current;
-      if (doc.format === "epub" && latest.current.preferences.epubFlow !== "paginated" && el &&
-          (direction > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 4 : el.scrollTop > 4)) {
-        el.scrollBy({top: direction * el.clientHeight * 0.9, behavior: "instant"});
-      } else keyboardTurn.current(direction);
+      keyboardTurn.current(direction);
     };
     const attachGestures = (surface: HTMLElement | Document) => readerGestures(surface, {
       enabled: () => !!latest.current.onReaderTap && latest.current.activityEnabled !== false,
@@ -614,6 +626,20 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           parseFloat(style.marginBottom);
       }
       return Math.max(1, host.current.clientHeight - used);
+    };
+    const applyEpubLineHeight = (contents: any) => {
+      const body = contents.document.body as HTMLElement;
+      // Publishers often set line-height on paragraphs/spans, including inline
+      // !important rules. The reader's explicit choice must override those too.
+      for (const element of [
+        body,
+        ...body.querySelectorAll<HTMLElement>("p, div, span, li, blockquote, dd, dt"),
+      ])
+        element.style.setProperty(
+          "line-height",
+          String(latest.current.preferences.lineHeight),
+          "important",
+        );
     };
     const fitEpubCover = (contents: any) => {
       // A standalone cover is a page, not a 1400x2100 scrolling illustration.
@@ -1247,6 +1273,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               width: el.clientWidth,
               height: epubHeight(),
               flow: p.epubFlow as any,
+              ...(latest.current.onReaderTap ? { gap: 0 } : {}),
               spread: p.epubSpread ? "auto" : "none",
               minSpreadWidth: 840,
               allowScriptedContent: false,
@@ -1279,6 +1306,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
               textRoot.current = c.document.body;
               if (latest.current.preferences.epubFlow !== "paginated")
                 c.document.body.style.padding = "24px";
+              applyEpubLineHeight(c);
               fitEpubCover(c);
               c.document.addEventListener("click", (ev: MouseEvent) => {
                 const a = (ev.target as Element).closest("a");
@@ -1336,6 +1364,10 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             r.themes.override("line-height", String(p.lineHeight));
             r.themes.default({
               body: {
+                ...(latest.current.onReaderTap ? {
+                  "padding-left": "0 !important",
+                  "padding-right": "0 !important",
+                } : {}),
                 color:
                   readingColors.ink + " !important",
                 background:
@@ -1505,8 +1537,13 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         r.themes.fontSize(p.fontSize + "px");
         r.themes.font(p.fontFamily);
         r.themes.override("line-height", String(p.lineHeight));
+        r.getContents().forEach(applyEpubLineHeight);
         r.themes.default({
           body: {
+            ...(latest.current.onReaderTap ? {
+              "padding-left": "0 !important",
+              "padding-right": "0 !important",
+            } : {}),
             color:
               readingColors.ink + " !important",
             background:
