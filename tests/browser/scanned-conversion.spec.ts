@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 
-test("desktop OCR converts a scanned PDF into readable EPUB text", async () => {
+test("PDF conversion exports readable EPUB and UTF-8 TXT with real local OCR", async ({
+  browser,
+}) => {
   test.skip(process.platform !== "darwin", "Uses the real macOS OCR engine");
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   const dir = await mkdtemp(join(tmpdir(), "openreading-scanned-conversion-"));
   let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
   try {
@@ -64,11 +66,30 @@ test("desktop OCR converts a scanned PDF into readable EPUB text", async () => {
     // Real scans often have a watermark text layer that is not the book body.
     scannedPage.drawText("Archive watermark", { x: 70, y: 30, size: 10 });
     pdf.addPage([600, 800]); // Keep page order without embedding a blank scan.
+    // An image-only page must never be silently dropped by text-layer extraction.
+    pdf
+      .addPage([600, 800])
+      .drawImage(image, { x: 0, y: 0, width: 600, height: 800 });
     const original = Buffer.from(await pdf.save());
     const material = join(dir, "material");
     await mkdir(material);
     const input = join(material, "Scanned.pdf");
     await writeFile(input, original);
+    const textPDF = await PDFDocument.create();
+    textPDF
+      .addPage([600, 800])
+      .drawText("TEXT LAYER FIRST PAGE", { x: 60, y: 700, size: 24 });
+    textPDF.addPage([600, 800]);
+    textPDF
+      .addPage([600, 800])
+      .drawText("SECOND PAGE IN ORDER", { x: 60, y: 700, size: 24 });
+    // Optional realistic input-size check, without committing a large fixture.
+    // A valid unused stream makes the PDF larger than the 120 MB reported by users.
+    if (process.env.OR_TEST_LARGE_PDF)
+      textPDF.context.register(
+        textPDF.context.stream(new Uint8Array(121 * 1024 * 1024)),
+      );
+    await writeFile(join(material, "Text.pdf"), await textPDF.save());
     await library.evaluate(async (sourcePath) => {
       const me = await (await fetch("/api/me")).json();
       const mutate = async (url: string, body: unknown) => {
@@ -148,6 +169,110 @@ test("desktop OCR converts a scanned PDF into readable EPUB text", async () => {
     );
     expect(ocrReport.pages[0].illustrations).toBeGreaterThan(0);
     expect(await readFile(input)).toEqual(original);
+
+    // Browser download: text-layer PDFs do not need the desktop OCR bridge.
+    const web = await browser.newPage({ acceptDownloads: true });
+    web.setDefaultTimeout(15000);
+    try {
+      await web.context().addCookies(await app.context().cookies());
+      await web.goto(library.url());
+      const convertTXT = async (name: string) => {
+        await web
+          .locator(".file-item")
+          .filter({ hasText: name })
+          .click({ button: "right" });
+        await web
+          .getByRole("menuitem", { name: "Convert to TXT", exact: true })
+          .click();
+      };
+      await convertTXT("Text.pdf");
+      const dialog = web.getByRole("dialog", {
+        name: "Convert book",
+        exact: true,
+      });
+      await expect(dialog.getByRole("heading")).toHaveText("PDF → TXT");
+      await expect(
+        dialog.getByLabel("Conversion mode", { exact: true }),
+      ).toHaveValue("auto");
+      await dialog
+        .getByRole("checkbox", { name: "Add to this library when finished" })
+        .uncheck();
+      const downloading = web.waitForEvent("download");
+      await dialog
+        .getByRole("button", { name: "Start conversion", exact: true })
+        .click();
+      const download = await downloading;
+      expect(download.suggestedFilename()).toBe("Text.txt");
+      expect((await readFile((await download.path())!)).toString("utf8")).toBe(
+        "TEXT LAYER FIRST PAGE\n\nSECOND PAGE IN ORDER",
+      );
+      await expect(dialog).toBeHidden();
+      await convertTXT("Scanned.pdf");
+      await web
+        .getByRole("button", { name: "Start conversion", exact: true })
+        .click();
+      // An image-only scan must produce an explicit error, never a partial file.
+      await expect(dialog.getByRole("alert")).toContainText(
+        "Use local OCR in the desktop app",
+      );
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    } finally {
+      await web.close();
+    }
+
+    // Native OCR and save: real scanned text, UTF-8, automatic extension and import.
+    const txtOutput = join(dir, "Scanned-output");
+    await app.evaluate(({ dialog }, filePath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    }, txtOutput);
+    await library
+      .locator(".library-book")
+      .filter({ hasText: "Scanned.pdf" })
+      .click({ button: "right" });
+    await library
+      .getByRole("menuitem", { name: "Convert to TXT", exact: true })
+      .click();
+    const txtDialog = library.getByRole("dialog", {
+      name: "Convert book",
+      exact: true,
+    });
+    // The desktop default must recognize the body, not export only the watermark.
+    await expect(
+      txtDialog.getByLabel("Conversion mode", { exact: true }),
+    ).toHaveValue("ocr");
+    await txtDialog
+      .getByRole("button", { name: "Start conversion", exact: true })
+      .click();
+    await expect(txtDialog).toBeHidden({ timeout: 90000 });
+    const txt = new TextDecoder("utf-8", { fatal: true }).decode(
+      await readFile(txtOutput + ".txt"),
+    );
+    expect(txt).toContain("SCANNED READING SAMPLE");
+    expect(txt).toContain("扫描书籍");
+    expect(txt).toContain("After the illustration");
+    expect(txt).not.toContain("<p");
+    expect(txt.indexOf("SCANNED READING SAMPLE")).toBeLessThan(
+      txt.indexOf("After the illustration"),
+    );
+    await expect(
+      library.locator(".library-book").filter({ hasText: "Scanned.txt" }),
+    ).toHaveCount(1);
+    expect(
+      await library.evaluate(async () => {
+        try {
+          await window.openReadingDesktop!.saveConvertedBook(
+            new Uint8Array([0xff]),
+            "txt",
+            "invalid",
+          );
+          return "accepted invalid UTF-8";
+        } catch (error: any) {
+          return error.message;
+        }
+      }),
+    ).toContain("Invalid output format");
+    expect(await readFile(input)).toEqual(original);
+
     const opening = app.waitForEvent("window");
     await library
       .locator(".library-book")

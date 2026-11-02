@@ -131,7 +131,10 @@ function App() {
     [bookFilter, setBookFilter] = useState<BookFilter>("all"),
     [fileFormat, setFileFormat] = useState<DocumentFormat>("all"),
     [deletingBook, setDeletingBook] = useState<any>(null),
-    [convertingBook, setConvertingBook] = useState<any>(null),
+    [convertingBook, setConvertingBook] = useState<{
+      book: any;
+      target: "pdf" | "epub" | "txt";
+    } | null>(null),
     [sources, setSources] = useState<any[]>([]),
     [doc, setDoc] = useState<Prepared | null>(null),
     [member, setMember] = useState<any>(null),
@@ -465,8 +468,16 @@ function App() {
         setDeletingBook(book);
         return;
       }
-      if (action === "convert") {
-        setConvertingBook(book);
+      if (action === "convert" || action === "convert-txt") {
+        setConvertingBook({
+          book,
+          target:
+            action === "convert-txt"
+              ? "txt"
+              : book.format === "pdf"
+                ? "epub"
+                : "pdf",
+        });
         return;
       }
       await api(
@@ -2716,7 +2727,8 @@ function App() {
       )}
       {convertingBook && workspace && (
         <ConversionDialog
-          book={convertingBook}
+          book={convertingBook.book}
+          target={convertingBook.target}
           workspaceId={workspace.id}
           close={() => setConvertingBook(null)}
           done={async () => {

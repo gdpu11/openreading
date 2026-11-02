@@ -4,30 +4,39 @@ import { tr } from "../i18n";
 import {
   conversionSource,
   pdfToEpub,
+  pdfToTxt,
   epubToPdf,
   type PdfEpubMode,
+  type PdfTxtMode,
+  type ConversionFormat,
 } from "./convert";
 export function ConversionDialog({
   book,
+  target,
   workspaceId,
   close,
   done,
 }: {
   book: any;
+  target: ConversionFormat;
   workspaceId: string;
   close: () => void;
   done: () => Promise<void>;
 }) {
-  const target = book.format === "pdf" ? "epub" : "pdf";
   const title = (
     book.bindings[0]?.relativePath?.split("/").pop() || "Book"
   ).replace(
     /\.(pdf|epub|mobi|azw3|azw|prc|kf8|fb2|fbz|docx|html|htm|xhtml|rtf|cbz|cbr)$/i,
     "",
   );
+  const canOCR = !!(
+    window.openReadingDesktop?.recognizePageDetailed ||
+    window.openReadingDesktop?.recognizePage
+  );
   const [mode, setMode] = useState<PdfEpubMode>(
       window.openReadingDesktop?.recognizePageDetailed ? "ocr" : "images",
     ),
+    [txtMode, setTxtMode] = useState<PdfTxtMode>(canOCR ? "ocr" : "auto"),
     [add, setAdd] = useState(true),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState(""),
@@ -90,6 +99,38 @@ export function ConversionDialog({
         {target === "pdf" && (
           <small>{tr("按 A4 纸张重新分页，保留可提取文字和书内图片。")}</small>
         )}
+        {target === "txt" && (
+          <>
+            <label>
+              {tr("转换方式")}
+              <select
+                disabled={busy}
+                aria-label={tr("转换方式")}
+                value={txtMode}
+                onChange={(e) => setTxtMode(e.target.value as PdfTxtMode)}
+              >
+                <option value="auto">
+                  {tr("提取文字层（无文字页自动 OCR）")}
+                </option>
+                <option value="ocr" disabled={!canOCR}>
+                  {tr("整页 OCR（适合扫描版）")}
+                </option>
+              </select>
+            </label>
+            <small>
+              {tr(
+                txtMode === "ocr"
+                  ? "逐页在本机识别，导出 UTF-8 纯文字；适合带水印或文字层不完整的扫描版 PDF。"
+                  : "优先提取 PDF 文字层，无文字页使用本地 OCR；按页处理并保留段落，TXT 不包含图片和原始版式。",
+              )}
+            </small>
+            {!canOCR && (
+              <small>
+                {tr("扫描页文字识别需要桌面端，请使用带本地 OCR 的客户端。")}
+              </small>
+            )}
+          </>
+        )}
         <label className="operation-choice">
           <input
             type="checkbox"
@@ -142,13 +183,20 @@ export function ConversionDialog({
                         controller.signal,
                         progress,
                       )
-                    : await epubToPdf(
-                        raw,
-                        title,
-                        controller.signal,
-                        progress,
-                        book.format,
-                      ),
+                    : target === "txt"
+                      ? await pdfToTxt(
+                          raw,
+                          txtMode,
+                          controller.signal,
+                          progress,
+                        )
+                      : await epubToPdf(
+                          raw,
+                          title,
+                          controller.signal,
+                          progress,
+                          book.format,
+                        ),
                 );
                 controller.signal.throwIfAborted();
                 setStatus(tr("正在保存转换文件…"));
@@ -165,11 +213,16 @@ export function ConversionDialog({
                   }
                 } else {
                   const url = URL.createObjectURL(
-                    new Blob([bytes], { type: "application/epub+zip" }),
+                    new Blob([bytes], {
+                      type:
+                        target === "txt"
+                          ? "text/plain;charset=utf-8"
+                          : "application/epub+zip",
+                    }),
                   );
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = title + ".epub";
+                  a.download = title + "." + target;
                   a.click();
                   setTimeout(() => URL.revokeObjectURL(url), 60000);
                 }
@@ -182,7 +235,9 @@ export function ConversionDialog({
                       type:
                         target === "pdf"
                           ? "application/pdf"
-                          : "application/epub+zip",
+                          : target === "txt"
+                            ? "text/plain;charset=utf-8"
+                            : "application/epub+zip",
                     }),
                   );
                   await api(

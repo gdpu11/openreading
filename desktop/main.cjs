@@ -820,16 +820,16 @@ if (!app.requestSingleInstanceLock()) {
       if (
         !trusted(event) ||
         !request ||
-        !["pdf", "epub"].includes(request.format) ||
+        !["pdf", "epub", "txt"].includes(request.format) ||
         !(request.data instanceof Uint8Array) ||
         request.data.length > 200 * 1024 * 1024
       )
         throw Error("Invalid conversion output");
       const bytes = Buffer.from(request.data);
       if (
-        request.format === "pdf"
-          ? bytes.subarray(0, 5).toString() !== "%PDF-"
-          : bytes.subarray(0, 2).toString() !== "PK"
+        (request.format === "pdf" && bytes.subarray(0, 5).toString() !== "%PDF-") ||
+        (request.format === "epub" && bytes.subarray(0, 2).toString() !== "PK") ||
+        (request.format === "txt" && !require("node:buffer").isUtf8(bytes))
       )
         throw Error("Invalid output format");
       const name =

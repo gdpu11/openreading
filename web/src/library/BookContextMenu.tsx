@@ -26,6 +26,7 @@ export type BookAction =
   | "delete"
   | "restore"
   | "convert"
+  | "convert-txt"
   | "sync"
   | "sync-folder";
 export type BookFilter = "all" | "favorites" | "finished" | "removed";
@@ -162,6 +163,15 @@ function BookContextMenu({
               {
                 action: "convert" as const,
                 label: book.format === "pdf" ? "转换为 EPUB" : "转换为 PDF",
+                icon: ArrowLeftRight,
+              },
+            ]
+          : []),
+        ...(book.format === "pdf"
+          ? [
+              {
+                action: "convert-txt" as const,
+                label: "转换为 TXT",
                 icon: ArrowLeftRight,
               },
             ]

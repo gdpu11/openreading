@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import * as pdfjs from "../readers/pdf";
 import { api, readContent } from "../api";
 import { openEpub } from "../readers/epub";
@@ -10,6 +11,36 @@ import {
   type DetailedOCR,
 } from "./pdfIllustrations";
 export type PdfEpubMode = "images" | "text" | "ocr";
+export type PdfTxtMode = "auto" | "ocr";
+export type ConversionFormat = "epub" | "pdf" | "txt";
+
+async function pdfTextLines(page: pdfjs.PDFPageProxy): Promise<string[]> {
+  const content = await page.getTextContent();
+  let previous: TextItem | null = null;
+  const lines: string[] = [];
+  let line = "";
+  for (const item of content.items) {
+    if (!("str" in item)) continue;
+    if (
+      previous &&
+      (previous.hasEOL ||
+        Math.abs(item.transform[5] - previous.transform[5]) > 3)
+    ) {
+      if (line.trim()) lines.push(line.trim());
+      line = "";
+    }
+    const spacer =
+      line &&
+      !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]$/u.test(line) &&
+      !/^\s/.test(item.str)
+        ? " "
+        : "";
+    line += spacer + item.str;
+    previous = item;
+  }
+  if (line.trim()) lines.push(line.trim());
+  return lines;
+}
 const escape = (s: string) =>
   s
     .replace(
@@ -119,32 +150,7 @@ export async function pdfToEpub(
       // Explicit OCR must recognize the rendered page instead of accepting it
       // as complete book text. The text-only mode still uses the PDF layer.
       if (mode === "text") {
-        const content = await page.getTextContent();
-        let previous: any = null,
-          lines: string[] = [],
-          line = "";
-        for (const item of content.items) {
-          if (!("str" in item)) continue;
-          if (
-            previous &&
-            (previous.hasEOL ||
-              Math.abs(item.transform[5] - previous.transform[5]) > 3)
-          ) {
-            if (line.trim()) lines.push(line.trim());
-            line = "";
-          }
-          const spacer =
-            line &&
-            !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]$/u.test(
-              line,
-            ) &&
-            !/^\s/.test(item.str)
-              ? " "
-              : "";
-          line += spacer + item.str;
-          previous = item;
-        }
-        if (line.trim()) lines.push(line.trim());
+        const lines = await pdfTextLines(page);
         if (lines.length)
           body = lines
             .map((line) => `<p dir="auto">${escape(line)}</p>`)
@@ -370,6 +376,121 @@ export async function pdfToEpub(
       type: "uint8array",
       compression: "DEFLATE",
     });
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    await task.destroy();
+  }
+}
+export async function pdfToTxt(
+  raw: ArrayBuffer,
+  mode: PdfTxtMode,
+  signal: AbortSignal,
+  progress: (done: number, total: number, stage?: "ocr") => void,
+): Promise<Uint8Array> {
+  const desktop = window.openReadingDesktop;
+  const canOCR = desktop?.recognizePageDetailed || desktop?.recognizePage;
+  if (mode === "ocr" && !canOCR)
+    throw Error(tr("扫描页文字识别需要桌面端，请使用带本地 OCR 的客户端。"));
+  signal.throwIfAborted();
+  const task = pdfjs.getDocument({
+    data: new Uint8Array(raw),
+    cMapUrl: "/pdf-assets/cmaps/",
+    standardFontDataUrl: "/pdf-assets/standard_fonts/",
+    wasmUrl: "/pdf-assets/wasm/",
+    enableXfa: false,
+  });
+  let rejectPassword: (error: Error) => void = () => {};
+  const password = new Promise<never>((_, reject) => {
+    rejectPassword = reject;
+  });
+  task.onPassword = () => {
+    rejectPassword(Error(tr("PDF 已加密，请先解锁后转换")));
+    void task.destroy();
+  };
+  const cancel = () => void task.destroy();
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const pdf = await Promise.race([task.promise, password]);
+    const chunks: Uint8Array[] = [];
+    const encoder = new TextEncoder();
+    let size = 0;
+    for (let n = 1; n <= pdf.numPages; n++) {
+      signal.throwIfAborted();
+      progress(n - 1, pdf.numPages);
+      const page = await pdf.getPage(n);
+      try {
+        let text = mode === "auto" ? (await pdfTextLines(page)).join("\n") : "";
+        signal.throwIfAborted();
+        // A genuinely empty page has neither text nor drawing operators.
+        // Do not require an OCR engine just to skip a blank page in a text PDF.
+        const needsOCR =
+          mode === "ocr" ||
+          (!text.trim() && (await page.getOperatorList()).fnArray.length > 0);
+        signal.throwIfAborted();
+        if (needsOCR) {
+          if (!canOCR)
+            throw Error(
+              tr(`第 ${n} 页没有可提取的文字，请在桌面端使用本地 OCR 转换`),
+            );
+          const base = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({
+            scale: Math.min(4, 2400 / base.width, 3400 / base.height),
+          });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          try {
+            const render = page.render({
+              canvas,
+              viewport,
+              background: "#ffffff",
+            });
+            const stop = () => render.cancel();
+            signal.addEventListener("abort", stop, { once: true });
+            try {
+              await render.promise;
+            } finally {
+              signal.removeEventListener("abort", stop);
+            }
+            signal.throwIfAborted();
+            progress(n - 1, pdf.numPages, "ocr");
+            const image = canvas.toDataURL("image/png");
+            text = desktop?.recognizePageDetailed
+              ? (await desktop.recognizePageDetailed(image)).lines
+                  .map((line) => line.text)
+                  .join("\n")
+              : await desktop!.recognizePage(image);
+            signal.throwIfAborted();
+          } finally {
+            canvas.width = canvas.height = 0;
+          }
+        }
+        const paragraphs = ocrParagraphs(text).join("\n\n");
+        if (paragraphs) {
+          const bytes = encoder.encode(
+            (chunks.length ? "\n\n" : "") + paragraphs,
+          );
+          size += bytes.length;
+          if (size > 200 * 1024 * 1024)
+            throw Error(tr("转换结果超过大小上限，请拆分 PDF 后重试"));
+          chunks.push(bytes);
+        }
+      } finally {
+        page.cleanup();
+      }
+      progress(n, pdf.numPages);
+      // Keep only text between pages, and yield so progress/cancel stays responsive.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    signal.throwIfAborted();
+    if (!size) throw Error(tr("未识别到文字，未生成 TXT 文件"));
+    const output = new Uint8Array(size);
+    let offset = 0;
+    for (const bytes of chunks) {
+      output.set(bytes, offset);
+      offset += bytes.length;
+    }
+    return output;
   } finally {
     signal.removeEventListener("abort", cancel);
     await task.destroy();

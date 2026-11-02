@@ -17,7 +17,7 @@ declare global {
       renderBookPDF: (html: string) => Promise<Uint8Array>;
       saveConvertedBook: (
         data: Uint8Array,
-        format: "pdf" | "epub",
+        format: "pdf" | "epub" | "txt",
         name: string,
       ) => Promise<{ saved: boolean }>;
       credential: (action: "load" | "save" | "forget", request: {id:string;target:string;key?:string}) => Promise<string | boolean | null>;
