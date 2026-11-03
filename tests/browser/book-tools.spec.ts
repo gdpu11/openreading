@@ -234,13 +234,13 @@ test("Native book conversion, original deletion, format filtering and reading es
     await card("Estimate.txt").click();
     let book = await opening;
     await expect(book.locator(".estimated-reading-time")).toHaveText(
-      "预计阅读 1 小时 1 分钟 · 300 字/词每分钟",
+      "预计阅读 1 小时 1 分钟 · 300 字/分钟",
     );
     await book.getByRole("button", { name: "阅读设置", exact: true }).click();
     await expect(book.getByText(/自动学习：前 1 小时统一使用 300/)).toBeVisible();
     await book.getByRole("button", { name: "关闭", exact: true }).click();
     await expect(book.locator(".estimated-reading-time")).toHaveText(
-      "预计阅读 1 小时 1 分钟 · 300 字/词每分钟",
+      "预计阅读 1 小时 1 分钟 · 300 字/分钟",
     );
     await app.evaluate(({ BrowserWindow }: any) =>
       BrowserWindow.getAllWindows()

@@ -229,7 +229,7 @@ export function ReadingStats({
             <span>{tr("阅读速度")}</span>
             <strong data-testid="reading-speed">
               {pace.speed}
-              <small>{tr("字/词每分钟")}</small>
+              <small>{tr("字/分钟")}</small>
             </strong>
             <p>
               {tr(
@@ -244,7 +244,7 @@ export function ReadingStats({
             <span>{tr("累计阅读字数")}</span>
             <strong data-testid="reading-words">
               {pace.words.toLocaleString(locale())}
-              <small>{tr("字/词")}</small>
+              <small>{tr("字")}</small>
             </strong>
             <p>{tr("按有效翻页和滚动估算，重叠时段只计一次")}</p>
           </article>

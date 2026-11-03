@@ -29,7 +29,7 @@ export function BookWordCount({
           ? tr("字数暂不可用")
           : value === null
             ? tr("字数统计中…")
-            : `${tr(pdf ? "可提取文字" : "全书字数")} ${value.count.toLocaleString(locale())} ${tr("字/词")}`}
+            : `${tr(pdf ? "可提取文字" : "全书字数")} ${value.count.toLocaleString(locale())} ${tr("字")}`}
       </span>
       {value && value !== "unavailable" && (
         <span
@@ -52,7 +52,7 @@ export function BookWordCount({
               {readingDuration(value.count, pace.speed)}
               {" · "}
               <span aria-label={tr("当前阅读速度")}>
-                {pace.speed} {tr("字/词每分钟")}
+                {pace.speed} {tr("字/分钟")}
               </span>
             </>
           )}
