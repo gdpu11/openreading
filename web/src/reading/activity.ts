@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { ReadingClock, type ReadingEvent, type ReadingInterval } from "./data";
+import { ReadingMeter, type ReadingView } from "./pace";
 export function useReadingActivity(
   host: RefObject<HTMLDivElement | null>,
   member: string,
   enabled: boolean,
   record?: (e: ReadingEvent) => void,
+  measure?: () => ReadingView | null,
 ) {
   const latest = useRef(record);
+  const latestMeasure = useRef(measure);
+  latestMeasure.current = measure;
   const total = useRef({
     member,
     milliseconds: 0,
@@ -36,6 +40,7 @@ export function useReadingActivity(
       total.current.intervals.push(e);
       latest.current?.(e);
     });
+    const meter = new ReadingMeter();
     const visible = () => {
       const nativeState = document.documentElement.dataset.readingSystemActive;
       // Electron's native window state includes focus, minimization and screen
@@ -67,13 +72,24 @@ export function useReadingActivity(
             },
       );
     };
-    const tick = () => {
+    const tick = (sample = false) => {
       const active = visible();
       // Also reconcile foreground transitions when DOM focus notifications
       // arrive late. Start a fresh interval; never count the background gap.
       clock.tick(active && foreground);
       if (active && !foreground) clock.interact();
       foreground = active;
+      if (!active || clock.idle) meter.reset();
+      else if (sample) {
+        for (const measured of meter.observe(
+          latestMeasure.current?.() || null,
+          true,
+        )) {
+          const event = { ...measured, member };
+          total.current.intervals.push(event);
+          latest.current?.(event);
+        }
+      }
       publish(active);
     };
     const activity = () => {
@@ -82,12 +98,14 @@ export function useReadingActivity(
       publish();
     };
     const focus = () => {
+      meter.reset();
       clock.tick(false);
       foreground = visible();
       if (foreground) clock.interact();
       publish(foreground);
     };
     const pause = () => {
+      meter.reset();
       clock.tick(false);
       clock.flush();
       foreground = false;
@@ -145,7 +163,7 @@ export function useReadingActivity(
     frames();
     const timer = setInterval(() => {
       frames();
-      tick();
+      tick(true);
     }, 1000);
     publish();
     const systemState = () => {

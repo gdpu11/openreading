@@ -109,6 +109,25 @@ it("keeps offline intervals until both upload acknowledgement and the replacemen
   expect(current.readingEvents).toEqual([]);
   expect(mobileReadingData(current).events).toEqual([event]);
 });
+it("keeps measured words pending until the computer confirms the same count", async () => {
+  current.readingEvents = [{...event, words:150}];
+  const originalFetch = fetch;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options: any) => {
+    const response = await originalFetch(url, options);
+    if (url.endsWith("/sync/reading")) {
+      const value = await response.json();
+      value.events = value.events.map(({words, ...rest}: any) => rest);
+      return Response.json(value);
+    }
+    return response;
+  }));
+  await synchronizeReading(conn, current);
+  expect(current.readingEvents![0].words).toBe(150);
+  vi.stubGlobal("fetch", originalFetch);
+  await synchronizeReading(conn, current);
+  expect(current.readingEvents).toEqual([]);
+  expect(mobileReadingData(current).events[0].words).toBe(150);
+});
 it("keeps records created during an in-flight upload and does not upload outside the new authorization scope", async () => {
   const later = {
     ...event,

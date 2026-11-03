@@ -3566,25 +3566,10 @@ function SettingsModal({
               <option value="zh">{tr("中文")}</option>
             </select>
           </label>
-          <label>
-            {tr("阅读速度（字/词每分钟）")}
-            <input
-              aria-label={tr("阅读速度（字/词每分钟）")}
-              type="number"
-              min="50"
-              max="2000"
-              key={p.readingSpeed || 300}
-              defaultValue={p.readingSpeed || 300}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-              onBlur={(e) => {
-                const n = Number(e.target.value);
-                if (n >= 50 && n <= 2000) updatePref({ readingSpeed: n });
-                else e.target.value = String(p.readingSpeed || 300);
-              }}
-            />
-          </label>
+          <div>
+            <span>{tr("阅读速度")}</span>
+            <p className="muted">{tr("自动学习：前 1 小时统一使用 300 字/词每分钟，之后根据你的有效阅读记录估算。当前速度和累计字数可在阅读数据中查看。")}</p>
+          </div>
           <label>
             {tr("字号")}{" "}
             <input

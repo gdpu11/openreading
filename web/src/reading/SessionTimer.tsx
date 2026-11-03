@@ -4,6 +4,12 @@ import { api, localDraftEntries } from "../api";
 import { tr } from "../i18n";
 import { useReadingActivity } from "./activity";
 import { bookReadingMilliseconds, clockTime, type ReadingEvent } from "./data";
+import {
+  readingPace,
+  mergeReadingEvents,
+  type ReadingPace,
+  type ReadingView,
+} from "./pace";
 
 export function SessionTimer({
   host,
@@ -12,6 +18,8 @@ export function SessionTimer({
   record,
   show,
   events,
+  measure,
+  onPace,
 }: {
   host: RefObject<HTMLDivElement | null>;
   member: string;
@@ -19,15 +27,18 @@ export function SessionTimer({
   record?: (event: ReadingEvent) => void;
   show: boolean;
   events?: ReadingEvent[];
+  measure?: () => ReadingView | null;
+  onPace?: (pace: ReadingPace) => void;
 }) {
-  const session = useReadingActivity(host, member, enabled, record);
+  const session = useReadingActivity(host, member, enabled, record, measure);
+  const [savedPace, setSavedPace] = useState(() => readingPace([]));
   const [history, setHistory] = useState({
     member: "",
     events: [] as ReadingEvent[],
     error: "",
   });
   useEffect(() => {
-    if (!show || events !== undefined) return;
+    if ((!show && !onPace) || events !== undefined) return;
     let alive = true,
       loading = false;
     const load = async () => {
@@ -37,21 +48,28 @@ export function SessionTimer({
         // Read the recovery queue first: an acknowledged receipt can disappear
         // locally only after the subsequent server snapshot can include it.
         const pending = await localDraftEntries("reading-event:");
-        const saved = await api<{ events: ReadingEvent[] }>(
-          `/reading/documents/${encodeURIComponent(member)}`,
-          "GET",
-          undefined,
-          { signal: AbortSignal.timeout(10000) },
-        );
-        if (alive)
+        const [saved, profile] = await Promise.all([
+          api<{ events: ReadingEvent[] }>(
+            `/reading/documents/${encodeURIComponent(member)}`,
+            "GET",
+            undefined,
+            { signal: AbortSignal.timeout(10000) },
+          ),
+          api<ReadingPace>("/reading/pace", "GET", undefined, {
+            signal: AbortSignal.timeout(10000),
+          }),
+        ]);
+        if (alive) {
+          setSavedPace(profile);
           setHistory({
             member,
-            events: [
-              ...saved.events,
-              ...pending.filter((e) => e.member === member),
-            ],
+            events: mergeReadingEvents(
+              saved.events,
+              pending.filter((e) => e.member === member),
+            ),
             error: "",
           });
+        }
       } catch {
         if (alive)
           setHistory((previous) => ({
@@ -74,6 +92,16 @@ export function SessionTimer({
       window.removeEventListener("online", refresh);
     };
   }, [member, show, events !== undefined]);
+  const pace =
+    events === undefined
+      ? savedPace
+      : readingPace([
+          ...(events || history.events),
+          ...(session.member === member ? session.intervals : []),
+        ]);
+  useEffect(() => {
+    onPace?.(pace);
+  }, [onPace, pace.words, pace.milliseconds, pace.learned, pace.speed]);
   if (!show) return null;
   const loaded = events !== undefined || history.member === member;
   const total = bookReadingMilliseconds(

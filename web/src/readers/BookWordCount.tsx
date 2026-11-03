@@ -1,14 +1,15 @@
 import { locale, tr } from "../i18n";
 import type { BookWordCount as Count } from "./wordCount";
+import { readingPace, type ReadingPace } from "../reading/pace";
 
 export function BookWordCount({
   value,
   pdf,
-  speed = 300,
+  pace = readingPace([]),
 }: {
   value: Count | null | "unavailable";
   pdf: boolean;
-  speed?: number;
+  pace?: ReadingPace;
 }) {
   const rules = tr("中文按字、英文按单词统计，忽略空白和标点。");
   const detail = pdf
@@ -34,7 +35,9 @@ export function BookWordCount({
         <span
           className="estimated-reading-time"
           title={tr(
-            `按每分钟 ${Math.max(50, Math.min(2000, speed || 300))} 字/词估算，可在阅读设置中调整。`,
+            pace.learned
+              ? "根据你的有效阅读速度估算，会随阅读记录持续更新。"
+              : "有效文字阅读累计满 1 小时后，自动使用你的实际阅读速度。",
           )}
         >
           {value.count === 0 ? (
@@ -46,7 +49,11 @@ export function BookWordCount({
                   ? "文字部分预计阅读"
                   : "预计阅读",
               )}{" "}
-              {readingDuration(value.count, speed)}
+              {readingDuration(value.count, pace.speed)}
+              {" · "}
+              <span aria-label={tr("当前阅读速度")}>
+                {pace.speed} {tr("字/词每分钟")}
+              </span>
             </>
           )}
         </span>
@@ -56,7 +63,7 @@ export function BookWordCount({
 }
 
 export function readingDuration(count: number, speed = 300) {
-  const minutes = Math.ceil(count / Math.max(50, Math.min(2000, speed || 300)));
+  const minutes = Math.ceil(count / Math.max(20, Math.min(2000, speed || 300)));
   return minutes >= 60
     ? tr(`${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`)
     : tr(`${minutes} 分钟`);

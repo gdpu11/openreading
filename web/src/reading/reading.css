@@ -124,6 +124,14 @@
   grid-column: 2/-1;
   margin: 0;
 }
+.reading-metric-speed strong small {
+  display: block;
+  font-size: 11px;
+}
+.reading-metric-words strong {
+  font-size: clamp(18px, 2vw, 27px);
+  overflow-wrap: anywhere;
+}
 .reading-calendar > header {
   margin-bottom: 22px;
   flex-wrap: wrap;
@@ -266,6 +274,9 @@
   }
   .reading-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .reading-metric-words {
+    grid-column: span 2;
   }
   .reading-metrics article {
     display: flex;

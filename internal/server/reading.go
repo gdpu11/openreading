@@ -29,6 +29,14 @@ func (s *Server) saveReading(r *http.Request, phone bool) error {
 			if len(key) < 16 || len(key) > 100 || !sok || !eok || math.Trunc(start) != start || math.Trunc(end) != end || start < 946684800000 || end <= start || end-start > 60000 || end > float64(time.Now().Add(5*time.Minute).UnixMilli()) {
 				return problem(400, "READING_INVALID", "阅读时间无效，请检查设备时间", false)
 			}
+			words := float64(0)
+			if raw, exists := v["words"]; exists {
+				var valid bool
+				words, valid = raw.(float64)
+				if !valid || math.IsNaN(words) || math.IsInf(words, 0) || math.Trunc(words) != words || words < 0 || words > 100000 || words > math.Ceil((end-start)*2000/60000) {
+					return problem(400, "READING_INVALID", "阅读字数无效", false)
+				}
+			}
 			if phone {
 				if _, e = s.syncMember(tx, deviceFrom(r), member); e != nil {
 					return e
@@ -38,10 +46,20 @@ func (s *Server) saveReading(r *http.Request, phone bool) error {
 					return e
 				}
 			}
-			previous, err := one(tx, "SELECT * FROM reading_events WHERE id=?", key)
+			previous, err := one(tx, "SELECT r.*,COALESCE(w.word_count,0) AS words FROM reading_events r LEFT JOIN reading_event_words w ON w.id=r.id WHERE r.id=?", key)
 			if err == nil {
 				if str(previous, "workspaceDocumentId") != member || int64(num(previous, "startedAt")) != int64(start) || int64(num(previous, "endedAt")) != int64(end) {
 					return problem(409, "READING_CONFLICT", "阅读记录编号已用于其他内容", false)
+				}
+				if words > 0 {
+					if old := num(previous, "words"); old > 0 && old != int(words) {
+						return problem(409, "READING_CONFLICT", "阅读记录编号已用于其他内容", false)
+					}
+					// A phone retains word measurements when an older computer
+					// acknowledges only time. Add them after the computer upgrades.
+					if e = exec(tx, "INSERT OR IGNORE INTO reading_event_words VALUES(?,?)", key, int64(words)); e != nil {
+						return e
+					}
 				}
 				continue
 			}
@@ -51,14 +69,19 @@ func (s *Server) saveReading(r *http.Request, phone bool) error {
 			if e = exec(tx, "INSERT INTO reading_events VALUES(?,?,?,?)", key, member, int64(start), int64(end)); e != nil {
 				return e
 			}
+			if words > 0 {
+				if e = exec(tx, "INSERT INTO reading_event_words VALUES(?,?)", key, int64(words)); e != nil {
+					return e
+				}
+			}
 		}
 		return nil
 	})
 }
 func (s *Server) readingData(q querier, d M) (M, error) {
-	rows, e := all(q, `SELECT r.id,r.workspace_document_id AS member,r.started_at,r.ended_at,wd.workspace_id,d.format,
+	rows, e := all(q, `SELECT r.id,r.workspace_document_id AS member,r.started_at,r.ended_at,COALESCE(rw.word_count,0) AS words,wd.workspace_id,d.format,
  COALESCE((SELECT e.relative_path FROM source_entries e JOIN document_bindings b ON b.source_entry_id=e.id WHERE b.workspace_document_id=wd.id ORDER BY (b.state='active') DESC,e.relative_path LIMIT 1),'历史文档') AS title
- FROM reading_events r JOIN workspace_documents wd ON wd.id=r.workspace_document_id JOIN documents d ON d.id=wd.document_id ORDER BY r.started_at,r.id`)
+ FROM reading_events r LEFT JOIN reading_event_words rw ON rw.id=r.id JOIN workspace_documents wd ON wd.id=r.workspace_document_id JOIN documents d ON d.id=wd.document_id ORDER BY r.started_at,r.id`)
 	if e != nil {
 		return nil, e
 	}
@@ -79,6 +102,9 @@ func (s *Server) readingData(q querier, d M) (M, error) {
 			}
 		}
 		if allowed {
+			if num(v, "words") == 0 {
+				delete(v, "words")
+			}
 			delete(v, "format")
 			delete(v, "workspaceId")
 			events = append(events, v)
@@ -118,14 +144,56 @@ func (s *Server) readingData(q querier, d M) (M, error) {
 	return result, nil
 }
 func (s *Server) readingRoutes() {
+	s.route("GET /api/reading/pace", func(w http.ResponseWriter, r *http.Request) error {
+		// Fetch only measured intervals; the reading footer must not download
+		// the user's entire multi-book time ledger every fifteen seconds.
+		rows, e := all(s.db, `SELECT r.id,r.started_at,r.ended_at,rw.word_count AS words FROM reading_event_words rw JOIN reading_events r ON r.id=rw.id ORDER BY r.started_at,r.id`)
+		if e != nil {
+			return e
+		}
+		var end, milliseconds int64
+		words := float64(0)
+		for _, sample := range rows {
+			start, stop := int64(num(sample, "startedAt")), int64(num(sample, "endedAt"))
+			duration := stop - start
+			if duration <= 0 {
+				continue
+			}
+			rate := float64(num(sample, "words")) * 60000 / float64(duration)
+			if rate < 20 || rate > 2000 {
+				continue
+			}
+			if start < end {
+				start = end
+			}
+			if stop <= start {
+				continue
+			}
+			ms := stop - start
+			words += float64(num(sample, "words")) * float64(ms) / float64(duration)
+			milliseconds += ms
+			end = stop
+		}
+		learned := milliseconds >= 3600000 && words > 0
+		speed := 300
+		if learned {
+			speed = int(math.Max(20, math.Min(2000, math.Round(words*60000/float64(milliseconds)))))
+		}
+		return send(w, M{"words": int64(math.Round(words)), "milliseconds": milliseconds, "speed": speed, "learned": learned})
+	})
 	s.route("GET /api/reading/documents/{member}", func(w http.ResponseWriter, r *http.Request) error {
 		member := r.PathValue("member")
 		if _, e := s.member(s.db, member); e != nil {
 			return e
 		}
-		events, e := all(s.db, `SELECT id,workspace_document_id AS member,started_at,ended_at FROM reading_events WHERE workspace_document_id=? ORDER BY started_at,id`, member)
+		events, e := all(s.db, `SELECT r.id,r.workspace_document_id AS member,r.started_at,r.ended_at,COALESCE(rw.word_count,0) AS words FROM reading_events r LEFT JOIN reading_event_words rw ON rw.id=r.id WHERE workspace_document_id=? ORDER BY started_at,r.id`, member)
 		if e != nil {
 			return e
+		}
+		for _, event := range events {
+			if num(event, "words") == 0 {
+				delete(event, "words")
+			}
 		}
 		return send(w, M{"events": events})
 	})

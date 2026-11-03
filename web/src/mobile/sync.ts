@@ -10,6 +10,7 @@ import {
 } from "./storage";
 import { downloadBlob } from "./download";
 import type { ReadingData } from "../reading/data";
+import { mergeReadingEvents } from "../reading/pace";
 
 export const mobileReadingData = (s: MobileState): ReadingData =>
   s.readingData || s.library?.readingData || { events: [], goalMinutes: 30 };
@@ -47,22 +48,15 @@ async function syncReading(c: Connection, s: MobileState) {
     events.forEach((e) => acknowledged.add(e.id));
   }
   if (pending.length) incoming = await request(c, "/sync/reading");
-  const confirmed = new Set(incoming.events.map((e) => e.id));
+  const confirmed = new Map(incoming.events.map((e) => [e.id, e]));
   // Never discard a receipt on POST alone. Publish the merged ledger and its
   // acknowledgements in the same durable state, including concurrent reading.
   s.readingData = {
     goalMinutes: incoming.goalMinutes,
-    events: [
-      ...new Map(
-        [...mobileReadingData(s).events, ...incoming.events].map((e) => [
-          e.id,
-          e,
-        ]),
-      ).values(),
-    ],
+    events: mergeReadingEvents(mobileReadingData(s).events, incoming.events),
   };
   s.readingEvents = (s.readingEvents || []).filter(
-    (e) => !acknowledged.has(e.id) || !confirmed.has(e.id),
+    (e) => !acknowledged.has(e.id) || !confirmed.has(e.id) || (!!e.words && confirmed.get(e.id)?.words !== e.words),
   );
   s.readingSyncedAt = new Date().toISOString();
   await persistState(s);

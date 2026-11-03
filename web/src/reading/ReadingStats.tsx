@@ -10,6 +10,8 @@ import {
   CalendarDays,
   Target,
   X,
+  Gauge,
+  BookOpen,
 } from "lucide-react";
 import {
   booksForDay,
@@ -20,6 +22,7 @@ import {
   type ReadingData,
 } from "./data";
 import "./reading.css";
+import { readingPace } from "./pace";
 export function ReadingStats({
   data,
   scope,
@@ -40,6 +43,7 @@ export function ReadingStats({
     [saving, setSaving] = useState(false);
   useEffect(() => setGoal(data.goalMinutes || 30), [data.goalMinutes]);
   const summary = useMemo(() => readingSummary(data.events), [data.events]);
+  const pace = useMemo(() => readingPace(data.events), [data.events]);
   const first = dateFromKey(month + "-01"),
     next = new Date(first.getFullYear(), first.getMonth() + 1, 1),
     count = new Date(next.getTime() - 1).getDate(),
@@ -61,13 +65,29 @@ export function ReadingStats({
   };
   const exportCSV = async () => {
     const csv =
-      "日期,阅读秒数,阅读分钟数\n" +
+      "日期,阅读秒数,阅读分钟数,阅读字数\n" +
       Object.entries(summary.days)
         .sort()
-        .map(
-          ([day, ms]) =>
-            `${day},${Math.floor(ms / 1000)},${(ms / 60000).toFixed(2)}`,
-        )
+        .map(([day, ms]) => {
+          const start = dateFromKey(day),
+            end = dateFromKey(day);
+          end.setDate(end.getDate() + 1);
+          const words = readingPace(
+            data.events
+              .filter((e) => e.endedAt > +start && e.startedAt < +end)
+              .map((e) => ({
+                ...e,
+                startedAt: Math.max(e.startedAt, +start),
+                endedAt: Math.min(e.endedAt, +end),
+                words:
+                  ((e.words || 0) *
+                    (Math.min(e.endedAt, +end) -
+                      Math.max(e.startedAt, +start))) /
+                  (e.endedAt - e.startedAt),
+              })),
+          ).words;
+          return `${day},${Math.floor(ms / 1000)},${(ms / 60000).toFixed(2)},${words}`;
+        })
         .join("\n");
     try {
       await saveExport(
@@ -204,6 +224,30 @@ export function ReadingStats({
             </strong>
             <p>{tr("每天满 1 分钟计为阅读一天")}</p>
           </article>
+          <article className="reading-metric-speed">
+            <Gauge size={20} />
+            <span>{tr("阅读速度")}</span>
+            <strong data-testid="reading-speed">
+              {pace.speed}
+              <small>{tr("字/词每分钟")}</small>
+            </strong>
+            <p>
+              {tr(
+                pace.learned
+                  ? "根据有效阅读自动校准"
+                  : `学习中 ${Math.min(60, Math.floor(pace.milliseconds / 60000))} / 60 分钟，当前使用默认速度`,
+              )}
+            </p>
+          </article>
+          <article className="reading-metric-words">
+            <BookOpen size={20} />
+            <span>{tr("累计阅读字数")}</span>
+            <strong data-testid="reading-words">
+              {pace.words.toLocaleString(locale())}
+              <small>{tr("字/词")}</small>
+            </strong>
+            <p>{tr("按有效翻页和滚动估算，重叠时段只计一次")}</p>
+          </article>
         </div>
       </div>
       <article className="reading-calendar">
@@ -323,6 +367,9 @@ export function ReadingStats({
         )}
       </article>
       <p className="reading-stat-rules">
+        {tr(
+          "阅读字数从功能启用后开始，按有停留时间的翻页和滚动估算；拖动进度、快速跳页、纯图片页不计入。有效文字阅读满 1 小时后自动校准速度，旧记录只有时长的部分不补算字数。",
+        )}{" "}
         {tr(
           "仅记录前台阅读；后台、锁屏或超过 2 分钟无操作时暂停。重叠时段合并计时，避免多个窗口或设备重复累计。连续天数以每日满 1 分钟计算，今天尚未开始时保留截至昨天的连续记录。日期按本机时区",
         )}{" "}

@@ -3,6 +3,8 @@ import { readingFormat } from "../formats";
 import { clearEpubHighlights } from "./epubHighlights";
 import { tr } from "../i18n";
 import { BookWordCount } from "./BookWordCount";
+import { readingPace } from "../reading/pace";
+import { readingViewport } from "../reading/viewport";
 import {
   bodyText,
   countTextWords,
@@ -100,6 +102,8 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
     const [wordCount, setWordCount] = useState<Count | null | "unavailable">(
       null,
     );
+    const [pace, setPace] = useState(() => readingPace([]));
+    const readingEpoch = useRef(0);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
     const [percentage, setPercentage] = useState<number | null>(null);
@@ -325,6 +329,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       : doc.format === "epub" ? {...currentLocator.current}
       : {scrollTop: host.current?.scrollTop || 0};
     const seekProgress = async (percentage: number) => {
+      readingEpoch.current++;
       const fraction = Math.max(0, Math.min(1, percentage / 100));
       const r = rendition.current;
       try {
@@ -950,6 +955,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
       },
       resolveAnchor: resolve,
       async navigateTo(anchor) {
+        readingEpoch.current++;
         if (Object.keys(currentLocator.current).length)
           navigationHistory.current = [
             ...navigationHistory.current.slice(-49),
@@ -1084,6 +1090,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         }
       },
       async navigateLocation(locator) {
+        readingEpoch.current++;
         if (Object.keys(currentLocator.current).length)
           navigationHistory.current = [
             ...navigationHistory.current.slice(-49),
@@ -1555,7 +1562,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         r.spread(p.epubSpread ? "auto" : "none", 840);
         const container =
           host.current?.querySelector<HTMLElement>(".epub-container");
-        if (container?.clientWidth && host.current)
+        if (container?.clientWidth && host.current && r.manager?.rendered)
           r.resize(container.clientWidth, epubHeight());
         void paint();
       } else {
@@ -1792,6 +1799,66 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
         record={props.onReading}
         events={props.readingEvents}
         show={!!props.timerContainer}
+        onPace={setPace}
+        measure={() => {
+          const outer = host.current;
+          if (!outer) return null;
+          const bounds = outer.getBoundingClientRect();
+          const layout = [doc.version.id, readingEpoch.current, p.fontSize, p.lineHeight,
+            p.fontFamily, p.epubFlow, p.epubSpread, p.pdfScale, p.pdfRotation,
+            outer.clientWidth, outer.clientHeight].join(":");
+          if (doc.format === "epub") {
+            const r = rendition.current;
+            if (!r?.manager?.rendered) return null;
+            const location = r.currentLocation();
+            if (!location?.start) return null;
+            const content = r.getContents()[0];
+            const frame = outer.querySelector("iframe");
+            if (!content?.document.body || !frame) return null;
+            const f = frame.getBoundingClientRect();
+            const stage = r.manager.container.getBoundingClientRect();
+            const index = location?.start?.index ?? 0;
+            const measured = readingViewport(content.document.body, {
+              left: Math.max(bounds.left, stage.left, f.left) - f.left,
+              top: Math.max(bounds.top, stage.top, f.top) - f.top,
+              right: Math.min(bounds.right, stage.right, f.right) - f.left,
+              bottom: Math.min(bounds.bottom, stage.bottom, f.bottom) - f.top,
+            }, `epub:${index}`, index, layout);
+            if (measured && p.epubFlow === "paginated") {
+              measured.page = location.start.displayed?.page;
+              measured.nextPage = (location.end?.displayed?.page || measured.page || 0) + 1;
+            }
+            return measured;
+          }
+          if (doc.format === "pdf") {
+            const index = pdfCurrentPage.current;
+            const view = pdfPages.current?.get(index);
+            if (!view?.hasText) return null;
+            const b = view.textLayer.getBoundingClientRect();
+            const measured = readingViewport(view.textLayer, {
+              left: Math.max(bounds.left, b.left), top: Math.max(bounds.top, b.top),
+              right: Math.min(bounds.right, b.right), bottom: Math.min(bounds.bottom, b.bottom),
+            }, `pdf:${index}`, index, layout);
+            if (measured) {
+              const step = pdfPages.current?.step() || 1;
+              measured.nextOrder = index + step;
+              if (step === 2) {
+                const next = pdfPages.current?.get(index + 1);
+                if (next?.hasText) {
+                  const b = next.textLayer.getBoundingClientRect();
+                  const other = readingViewport(next.textLayer, {
+                    left: Math.max(bounds.left, b.left), top: Math.max(bounds.top, b.top),
+                    right: Math.min(bounds.right, b.right), bottom: Math.min(bounds.bottom, b.bottom),
+                  }, `pdf:${index + 1}`, index + 1, layout);
+                  if (other) { measured.text += "\n" + other.text; measured.end += other.text.length + 1; }
+                }
+              }
+            }
+            return measured;
+          }
+          const root = outer.querySelector<HTMLElement>(".prose");
+          return root ? readingViewport(root, bounds, "body", 0, layout) : null;
+        }}
       />
     );
     const pageNumber =
@@ -1858,7 +1925,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
             <BookWordCount
               value={wordCount}
               pdf={doc.format === "pdf"}
-              speed={p.readingSpeed}
+              pace={pace}
             />,
             props.wordCountContainer,
           )
@@ -1866,7 +1933,7 @@ export const Reader = forwardRef<ReaderAdapter, Props>(
           <BookWordCount
             value={wordCount}
             pdf={doc.format === "pdf"}
-            speed={p.readingSpeed}
+            pace={pace}
           />
         ) : null}
         {props.pageNumberContainer &&

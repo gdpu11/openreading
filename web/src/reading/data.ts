@@ -5,12 +5,13 @@ export type ReadingEvent = {
   startedAt: number;
   endedAt: number;
   title?: string;
+  words?: number;
 };
 export type ReadingData = { events: ReadingEvent[]; goalMinutes: number };
 export type ReadingInterval = Pick<
   ReadingEvent,
-  "member" | "startedAt" | "endedAt"
->;
+  "member" | "startedAt" | "endedAt" | "words"
+> & { id?: string };
 export function bookReadingMilliseconds(
   events: ReadingInterval[],
   member: string,

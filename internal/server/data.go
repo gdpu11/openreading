@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "library_books", "note_learning", "book_preferences", "bookmarks", "recognized_pages", "mcp_documents"}
+var backupTables = []string{"workspaces", "documents", "sources", "source_entries", "workspace_documents", "document_bindings", "versions", "artifacts", "manifests", "annotations", "resolutions", "threads", "messages", "message_versions", "drafts", "reading_states", "providers", "contexts", "ai_runs", "attempts", "run_events", "reading_events", "reading_event_words", "library_books", "note_learning", "book_preferences", "bookmarks", "recognized_pages", "mcp_documents"}
 
 type backupManifest struct {
 	SchemaVersion     int               `json:"schemaVersion"`
