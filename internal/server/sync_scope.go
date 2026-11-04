@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -53,7 +54,7 @@ func deviceDocument(q querier, d, m M) (bool, error) {
 				folder, _ := raw.(map[string]any)
 				prefix := str(folder, "path")
 				for _, binding := range bindings {
-					if binding["sourceId"] == folder["sourceId"] && (prefix == "" || strings.HasPrefix(str(binding, "relativePath"), prefix+"/")) {
+					if binding["sourceId"] == folder["sourceId"] && (prefix == "" || strings.HasPrefix(filepath.ToSlash(str(binding, "relativePath")), prefix+"/")) {
 						return true, nil
 					}
 				}
@@ -212,9 +213,11 @@ func (s *Server) syncScopeRoutes() {
 		for _, binding := range bindings {
 			member := str(binding, "workspaceDocumentId")
 			delete(binding, "workspaceDocumentId")
+			binding["relativePath"] = filepath.ToSlash(str(binding, "relativePath"))
 			byMember[member] = append(byMember[member], binding)
 		}
 		for _, doc := range docs {
+			doc["title"] = filepath.ToSlash(str(doc, "title"))
 			doc["bindings"] = byMember[str(doc, "id")]
 		}
 		return send(w, docs)

@@ -640,7 +640,7 @@ test("Electron launches bundled service in an isolated renderer and preserves th
     await expect(bookBody()).toContainText("第1章 接口重试");
     await expect(
       reopened.locator(".reading-footer .book-word-count"),
-    ).toHaveText(/全书字数 [1-9][\d,]* 字\/词/);
+    ).toHaveText(/^全书字数 [1-9][\d,]* 字$/);
     // Actual native focus notifications must pause the same clock shown in
     // the toolbar, including when an EPUB iframe has keyboard focus.
     await reopened.clock.pauseAt(
@@ -1163,7 +1163,7 @@ test("Electron library actions and word counts persist across book windows and s
       .click();
     let book = await opened;
     await expect(book.locator(".reading-footer .book-word-count")).toHaveText(
-      "全书字数 6 字/词",
+      "全书字数 6 字",
     );
     expect(app.windows()).toHaveLength(2);
     await book.screenshot({ path: join(evidence, "word-count-macos.png") });
@@ -1212,7 +1212,7 @@ test("Electron library actions and word counts persist across book windows and s
       .click();
     book = await opened;
     await expect(book.locator(".reading-footer .book-word-count")).toHaveText(
-      "全书字数 6 字/词",
+      "全书字数 6 字",
     );
     expect(recomputed).toBe(0);
     await expect(card().getByLabel("已收藏")).toBeVisible();

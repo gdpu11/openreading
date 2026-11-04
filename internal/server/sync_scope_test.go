@@ -207,13 +207,32 @@ func TestSyncDesktopSelectionFoldersExclusionsAndPairOnly(t *testing.T) {
 	waitScan(str(obj(source, "scan"), "id"))
 	find := func(name string) M {
 		t.Helper()
-		doc, e := one(c.s.db, `SELECT b.workspace_document_id AS id,e.source_id FROM document_bindings b JOIN source_entries e ON e.id=b.source_entry_id WHERE e.source_id=? AND e.relative_path=?`, source["id"], name)
+		doc, e := one(c.s.db, `SELECT b.workspace_document_id AS id,e.source_id FROM document_bindings b JOIN source_entries e ON e.id=b.source_entry_id WHERE e.source_id=? AND e.relative_path=?`, source["id"], filepath.FromSlash(name))
 		if e != nil {
 			t.Fatal(e)
 		}
 		return doc
 	}
 	a, b, outside := find("reading/a.md"), find("reading/nested/b.txt"), find("reading-other/c.md")
+	code, raw := c.req("GET", "/api/pair/catalog", nil)
+	catalog, ok := raw.([]any)
+	if code != 200 || !ok {
+		t.Fatal("desktop catalog", code, raw)
+	}
+	found := false
+	for _, raw := range catalog {
+		doc := raw.(map[string]any)
+		if doc["id"] == b["id"] {
+			found = true
+			bindings := arr(doc, "bindings")
+			if str(doc, "title") != "reading/nested/b.txt" || len(bindings) != 1 || str(bindings[0].(map[string]any), "relativePath") != "reading/nested/b.txt" {
+				t.Fatal("catalog paths must use portable folder separators", doc)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("nested book missing from desktop catalog", catalog)
+	}
 	paired := func() (string, M) {
 		t.Helper()
 		token, device := id()+id(), M{"id": id()}
@@ -226,6 +245,13 @@ func TestSyncDesktopSelectionFoldersExclusionsAndPairOnly(t *testing.T) {
 		return token, device
 	}
 	token, device := paired()
+	phone := phoneCatalog(t, c, token, "?q=b.txt")
+	if num(phone, "total") != 1 || str(arr(phone, "items")[0].(map[string]any), "title") != "b.txt" {
+		t.Fatal("phone catalog must show the filename without its folder", phone)
+	}
+	if catalog := phoneCatalog(t, c, token, "?q=reading"); num(catalog, "total") != 0 {
+		t.Fatal("phone filename search must not match parent folders", catalog)
+	}
 	status := func(token string) bool {
 		t.Helper()
 		rec := deviceReq(c, token, "GET", "/api/sync/status", nil)

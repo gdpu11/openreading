@@ -3,7 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -64,7 +64,7 @@ func (s *Server) syncCatalogRoutes() {
 					return e
 				}
 				for _, m := range docs {
-					title := path.Base(str(m, "title"))
+					title := filepath.Base(str(m, "title"))
 					if (q != "" && !strings.Contains(strings.ToLower(title), strings.ToLower(q))) || (format != "" && str(m, "format") != format) {
 						continue
 					}

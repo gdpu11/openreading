@@ -394,7 +394,7 @@ test("Actual legacy EPUB restores navigation, live page turns, seek and saved pr
     )
     .toBeGreaterThan(50);
   await expect(page.locator(".reading-footer .book-word-count")).toHaveText(
-    /全书字数 [1-9][\d,]* 字\/词/,
+    /^全书字数 [1-9][\d,]* 字$/,
   );
   await page.getByRole("button", { name: "目录", exact: true }).click();
   await expect(page.locator(".outline button").first()).toBeVisible();
@@ -548,7 +548,7 @@ test("Whole-book counts cover all chapters, exclude markup, survive reopening an
   await page.reload();
   const count = page.locator(".reading-footer .book-word-count");
   await openFile(page, "精确字数.epub");
-  await expect(count).toHaveText("全书字数 16 字/词");
+  await expect(count).toHaveText("全书字数 16 字");
   await expect(count).toHaveAttribute("title", /全书正文/);
   const puts: string[] = [];
   page.on("request", (r) => {
@@ -556,15 +556,15 @@ test("Whole-book counts cover all chapters, exclude markup, survive reopening an
       puts.push(r.url());
   });
   await page.reload();
-  await expect(count).toHaveText("全书字数 16 字/词");
+  await expect(count).toHaveText("全书字数 16 字");
   expect(puts).toEqual([]);
   await page.screenshot({ path: path.join(evidence, "whole-book-count.png") });
   for (const name of ["精确字数.txt", "精确字数.md"]) {
     await openFile(page, name);
-    await expect(count).toHaveText("全书字数 6 字/词");
+    await expect(count).toHaveText("全书字数 6 字");
   }
   await openFile(page, "双栏与扫描混合.pdf");
-  await expect(count).toHaveText(/可提取文字 [1-9][\d,]* 字\/词/);
+  await expect(count).toHaveText(/^可提取文字 [1-9][\d,]* 字$/);
   await expect(count).toHaveAttribute("title", /有文字 2 \/ 3 页/);
   await page.screenshot({ path: path.join(evidence, "pdf-text-count.png") });
 });
@@ -3253,22 +3253,13 @@ test("M5 local HTTP and browser-visible note-save latency p95", async ({
     await expect(page.locator(".note-body").last()).toHaveText(
       "保存延迟样本 39",
     );
-    await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.request().method() === "GET" &&
-          response
-            .url()
-            .includes(
-              "/drafts/" + encodeURIComponent(d.id + ":" + threads[0].threadId),
-            ),
-      ),
-      page
-        .locator(".thread-actions")
-        .getByRole("button", { name: "打开讨论", exact: true })
-        .first()
-        .click(),
-    ]);
+    // Draft recovery can already activate this thread. Selecting it again
+    // does not require another GET; measure only after the editor is ready.
+    await page
+      .locator(".thread-actions")
+      .getByRole("button", { name: /^(打开讨论|继续讨论)$/ })
+      .first()
+      .click();
     await expect(page.getByLabel("评论输入")).toBeEnabled();
     const visibleTimes: number[] = [];
     for (let i = 0; i < 20; i++) {
