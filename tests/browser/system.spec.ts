@@ -1991,7 +1991,17 @@ test("Reader text reflows into the space released by collapsed panels", async ({
       await page.getByLabel("页面布局").selectOption("scroll");
     await expect(page.locator(".discussion")).toBeHidden();
     await expect(content).toBeVisible();
-    const width = async () => (await content.boundingBox())!.width;
+    const width = async () => {
+      let measured = 0;
+      // EPUB reflow replaces its iframe. Re-resolve the locator after a
+      // transient detach rather than failing before the layout can settle.
+      await expect(async () => {
+        const box = await content.boundingBox();
+        expect(box).not.toBeNull();
+        measured = box!.width;
+      }).toPass({ timeout: 10000 });
+      return measured;
+    };
     const defaultWidth = await width();
     await page.getByTitle("展开讨论", { exact: true }).click();
     await expect.poll(width).toBeLessThan(defaultWidth - 250);
